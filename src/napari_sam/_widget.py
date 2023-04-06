@@ -6,7 +6,7 @@ from enum import Enum
 from collections import deque
 import inspect
 from segment_anything import SamPredictor, sam_model_registry
-from napari_segment_anything.utils import get_weights_path, get_cached_weight_types
+from napari_sam.utils import get_weights_path, get_cached_weight_types
 import torch
 from vispy.util.keys import CONTROL
 
@@ -274,9 +274,6 @@ class SamWidget(QWidget):
             self.sam_predictor.set_image(image)
 
     def do_click(self, coords, is_positive):
-        print("Click")
-        print(is_positive)
-
         self.point_coords.append(coords)
         self.point_labels.append(is_positive)
 

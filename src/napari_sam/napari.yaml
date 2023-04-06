@@ -1,0 +1,10 @@
+name: napari-sam
+display_name: Segment Anything
+contributions:
+  commands:
+    - id: napari-sam.make_qwidget
+      python_name: napari_sam._widget:SamWidget
+      title: Segment Anything
+  widgets:
+    - command: napari-sam.make_qwidget
+      display_name: Segment Anything

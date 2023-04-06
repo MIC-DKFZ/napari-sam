@@ -1,11 +1,11 @@
-# napari-segment-anything
+# napari-sam
 
-[![License BSD-3](https://img.shields.io/pypi/l/napari-segment-anything.svg?color=green)](https://github.com/Karol-G/napari-segment-anything/raw/main/LICENSE)
-[![PyPI](https://img.shields.io/pypi/v/napari-segment-anything.svg?color=green)](https://pypi.org/project/napari-segment-anything)
-[![Python Version](https://img.shields.io/pypi/pyversions/napari-segment-anything.svg?color=green)](https://python.org)
-[![tests](https://github.com/Karol-G/napari-segment-anything/workflows/tests/badge.svg)](https://github.com/Karol-G/napari-segment-anything/actions)
-[![codecov](https://codecov.io/gh/Karol-G/napari-segment-anything/branch/main/graph/badge.svg)](https://codecov.io/gh/Karol-G/napari-segment-anything)
-[![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-segment-anything)](https://napari-hub.org/plugins/napari-segment-anything)
+[![License Apache Software License 2.0](https://img.shields.io/pypi/l/napari-sam.svg?color=green)](https://github.com/MIC-DKFZ/napari-sam/raw/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/napari-sam.svg?color=green)](https://pypi.org/project/napari-sam)
+[![Python Version](https://img.shields.io/pypi/pyversions/napari-sam.svg?color=green)](https://python.org)
+[![tests](https://github.com/MIC-DKFZ/napari-sam/workflows/tests/badge.svg)](https://github.com/MIC-DKFZ/napari-sam/actions)
+[![codecov](https://codecov.io/gh/MIC-DKFZ/napari-sam/branch/main/graph/badge.svg)](https://codecov.io/gh/MIC-DKFZ/napari-sam)
+[![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-sam)](https://napari-hub.org/plugins/napari-sam)
 
 Segment anything with Meta AI's new SAM model!
 
@@ -23,7 +23,7 @@ https://napari.org/stable/plugins/index.html
 
 ## Installation
 
-You can install `napari-segment-anything` via [pip]:
+You can install `napari-sam` via [pip]:
 
     pip install napari-sam
 
@@ -31,7 +31,7 @@ You can install `napari-segment-anything` via [pip]:
 
 To install latest development version :
 
-    pip install git+https://github.com/Karol-G/napari-segment-anything.git
+    pip install git+https://github.com/MIC-DKFZ/napari-sam.git
 
 
 ## Contributing
@@ -41,8 +41,8 @@ the coverage at least stays the same before you submit a pull request.
 
 ## License
 
-Distributed under the terms of the [BSD-3] license,
-"napari-segment-anything" is free and open source software
+Distributed under the terms of the [Apache Software License 2.0] license,
+"napari-sam" is free and open source software
 
 ## Issues
 
@@ -59,7 +59,7 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [Mozilla Public License 2.0]: https://www.mozilla.org/media/MPL/2.0/index.txt
 [cookiecutter-napari-plugin]: https://github.com/napari/cookiecutter-napari-plugin
 
-[file an issue]: https://github.com/Karol-G/napari-segment-anything/issues
+[file an issue]: https://github.com/MIC-DKFZ/napari-sam/issues
 
 [napari]: https://github.com/napari/napari
 [tox]: https://tox.readthedocs.io/en/latest/
