@@ -80,14 +80,17 @@ class SamWidget(QWidget):
         self.is_active = False
         self.layout().addWidget(self.btn_activate)
 
-        self.l_info = QLabel("Info:")
-        self.l_info_positive = QLabel("Middle Mouse Button: Positive Click")
-        self.l_info_negative = QLabel("Control + Middle Mouse Button: Negative Click")
-        self.l_info_undo = QLabel("Undo: Control + Z")
+        self.l_info = QLabel("Info: \n \n"
+                             "Positive Click: Middle Mouse Button\n \n"
+                             "Negative Click: Control + Middle Mouse Button \n \n"
+                             "Undo: Control + Z")
+        # self.l_info_positive = QLabel("Middle Mouse Button: Positive Click")
+        # self.l_info_negative = QLabel("Control + Middle Mouse Button: Negative Click")
+        # self.l_info_undo = QLabel("Undo: Control + Z")
         self.layout().addWidget(self.l_info)
-        self.layout().addWidget(self.l_info_positive)
-        self.layout().addWidget(self.l_info_negative)
-        self.layout().addWidget(self.l_info_undo)
+        # self.layout().addWidget(self.l_info_positive)
+        # self.layout().addWidget(self.l_info_negative)
+        # self.layout().addWidget(self.l_info_undo)
 
         self.image_name = None
         self.image_layer = None
@@ -216,6 +219,8 @@ class SamWidget(QWidget):
             self.btn_activate.setText("Deactivate")
             self.rb_bbox.setEnabled(False)
             self.rb_auto.setEnabled(False)
+            self.rb_bbox.setStyleSheet("color: gray")
+            self.rb_auto.setStyleSheet("color: gray")
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
@@ -256,6 +261,8 @@ class SamWidget(QWidget):
             self.btn_activate.setText("Deactivate")
             self.rb_bbox.setEnabled(False)
             self.rb_click.setEnabled(False)
+            self.rb_bbox.setStyleSheet("color: gray")
+            self.rb_click.setStyleSheet("color: gray")
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
@@ -290,6 +297,8 @@ class SamWidget(QWidget):
         self.sam_logits = None
         self.rb_click.setEnabled(True)
         self.rb_auto.setEnabled(True)
+        self.rb_click.setStyleSheet("color: black")
+        self.rb_auto.setStyleSheet("color: black")
         self._reset_history()
 
     def callback_click(self, layer, event):
