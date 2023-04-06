@@ -9,6 +9,7 @@ from segment_anything import SamPredictor, sam_model_registry
 from napari_sam.utils import get_weights_path, get_cached_weight_types
 import torch
 from vispy.util.keys import CONTROL
+import copy
 
 
 class AnnotatorMode(Enum):
@@ -81,9 +82,11 @@ class SamWidget(QWidget):
         self.l_info = QLabel("Info:")
         self.l_info_positive = QLabel("Middle Mouse Button: Positive Click")
         self.l_info_negative = QLabel("Control + Middle Mouse Button: Negative Click")
+        self.l_info_undo = QLabel("Undo: Control + Z")
         self.layout().addWidget(self.l_info)
         self.layout().addWidget(self.l_info_positive)
         self.layout().addWidget(self.l_info_negative)
+        self.layout().addWidget(self.l_info_undo)
 
         self.image_name = None
         self.image_layer = None
@@ -260,6 +263,8 @@ class SamWidget(QWidget):
         self.annotator_mode = AnnotatorMode.NONE
         self.point_coords = []
         self.point_labels = []
+        self.sam_logits = None
+        self._reset_history()
 
     def callback_click(self, layer, event):
         if self.annotator_mode == AnnotatorMode.CLICK:
@@ -283,11 +288,16 @@ class SamWidget(QWidget):
             self.sam_predictor.set_image(image)
 
     def do_click(self, coords, is_positive):
+        self._save_history({"point_coords": copy.deepcopy(self.point_coords), "point_labels": copy.deepcopy(self.point_labels), "logits": self.sam_logits})
         self.point_coords.append(coords)
         self.point_labels.append(is_positive)
 
+        self.run(self.point_coords, self.point_labels)
+
+    def run(self, point_coords, point_labels):
+        print(len(point_coords))
         colors = []
-        for point_label in self.point_labels:
+        for point_label in point_labels:
             if point_label:
                 colors.append("green")
             else:
@@ -295,15 +305,18 @@ class SamWidget(QWidget):
 
         selected_layer = self.viewer.layers.selection.active
         self.viewer.layers.remove(self.points_layer)
-        self.points_layer = self.viewer.add_points(name="Ignore this layer <hidden>", data=np.asarray(self.point_coords), face_color=colors)
+        self.points_layer = self.viewer.add_points(name="Ignore this layer <hidden>", data=np.asarray(point_coords), face_color=colors)
         self.viewer.layers.selection.active = selected_layer
 
-        prediction, _, self.sam_logits = self.sam_predictor.predict(
-            point_coords=np.flip(self.point_coords, axis=-1),
-            point_labels=np.asarray(self.point_labels),
-            mask_input=self.sam_logits,
-            multimask_output=False,
-        )
+        if point_coords:
+            prediction, _, self.sam_logits = self.sam_predictor.predict(
+                point_coords=np.flip(point_coords, axis=-1),
+                point_labels=np.asarray(point_labels),
+                mask_input=self.sam_logits,
+                multimask_output=False,
+            )
+        else:
+            prediction = np.zeros_like(self.label_layer.data)
         self.label_layer.data = prediction
 
     def remove_all_widget_callbacks(self):
@@ -315,15 +328,15 @@ class SamWidget(QWidget):
                 if inspect.ismethod(callback) and callback.__self__ == self:
                     callback_list.remove(callback)
 
-    def save_history(self, indices, old_values, new_values, layer):  # Not used yet
-        # indices = tuple(map(tuple, indices))
-        # atom = (indices, old_values, new_values)
-        # layer._save_history(atom)
-        pass
+    # def save_history(self, indices, old_values, new_values, layer):  # Not used yet
+    #     # indices = tuple(map(tuple, indices))
+    #     # atom = (indices, old_values, new_values)
+    #     # layer._save_history(atom)
+    #     pass
 
     def _reset_history(self, event=None):
-        self._undo_history = deque(maxlen=self._history_limit)
-        self._redo_history = deque(maxlen=self._history_limit)
+        self._undo_history = deque()
+        self._redo_history = deque()
 
     def _save_history(self, value):
         """Save a history "atom" to the undo history.
@@ -340,10 +353,11 @@ class SamWidget(QWidget):
         value : 2-tuple of region prop dicts
         """
         self._redo_history = deque()
-        if not self._block_saving:
-            self._undo_history.append([value])
-        else:
-            self._undo_history[-1].append(value)
+        # if not self._block_saving:
+        #     self._undo_history.append([value])
+        # else:
+        #     self._undo_history[-1].append(value)
+        self._undo_history.append(value)
 
     def _load_history(self, before, after, undoing=True):
         """Load a history item and apply it to the array.
@@ -368,10 +382,15 @@ class SamWidget(QWidget):
             return
 
         history_item = before.pop()
-        after.append(list(reversed(history_item)))
-        for prev_props, next_props in reversed(history_item):
-            values = prev_props if undoing else next_props
-            self.props.update(values)
+        # history_item = before.pop()
+        # before.append(history_item)
+        after.append(history_item)
+
+        self.point_coords = history_item["point_coords"]
+        self.point_labels = history_item["point_labels"]
+        self.sam_logits = history_item["logits"]
+        self.run(history_item["point_coords"], history_item["point_labels"])
+        print("Tmp1")
 
     def undo(self):
         self._load_history(
