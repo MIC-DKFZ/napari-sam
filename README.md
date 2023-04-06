@@ -25,7 +25,7 @@ https://napari.org/stable/plugins/index.html
 
 You can install `napari-segment-anything` via [pip]:
 
-    pip install napari-segment-anything
+    pip install napari-sam
 
 
 
