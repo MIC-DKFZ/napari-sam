@@ -88,6 +88,7 @@ class SamWidget(QWidget):
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
+        self.points_layer = None
 
         self.init_comboboxes()
 
@@ -220,6 +221,9 @@ class SamWidget(QWidget):
 
             self.set_image()
 
+            self.points_layer = self.viewer.add_points(name="Ignore this layer")
+            self.points_layer.editable = False
+
             @self.label_layer.bind_key('Control-Z')
             def on_undo(layer):
                 """Undo the last paint or fill action since the view slice has changed."""
@@ -248,6 +252,7 @@ class SamWidget(QWidget):
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
+        self.points_layer = None
         self.annotator_mode = AnnotatorMode.NONE
         self.point_coords = []
         self.point_labels = []
@@ -276,6 +281,15 @@ class SamWidget(QWidget):
     def do_click(self, coords, is_positive):
         self.point_coords.append(coords)
         self.point_labels.append(is_positive)
+
+        colors = []
+        for point_label in self.point_labels:
+            if point_label:
+                colors.append("green")
+            else:
+                colors.append("red")
+        self.viewer.layers.remove(self.points_layer)
+        self.points_layer = self.viewer.add_points(name="Ignore this layer", data=np.asarray(self.point_coords), face_color=colors)
 
         prediction, _, self.sam_logits = self.sam_predictor.predict(
             point_coords=np.flip(self.point_coords, axis=-1),
