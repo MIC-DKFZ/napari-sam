@@ -1,15 +1,14 @@
 from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton
 from qtpy import QtCore
-from qtpy.QtCore import Qt
 import napari
 import numpy as np
 from enum import Enum
 from collections import deque
 import inspect
 from segment_anything import SamPredictor, sam_model_registry
-from src.napari_segment_anything.utils import get_weights_path, get_cached_weight_types
+from napari_segment_anything.utils import get_weights_path, get_cached_weight_types
 import torch
-from vispy.util.keys import Key, CONTROL
+from vispy.util.keys import CONTROL
 
 
 class AnnotatorMode(Enum):
