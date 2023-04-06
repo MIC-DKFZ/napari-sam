@@ -11,15 +11,9 @@ Segment anything with Meta AI's new SAM model!
 
 ----------------------------------
 
-This [napari] plugin was generated with [Cookiecutter] using [@napari]'s [cookiecutter-napari-plugin] template.
+[![SAM Demo](https://img.youtube.com/vi/OPE1Xnw487E/0.jpg)](https://www.youtube.com/watch?v=OPE1Xnw487E)
 
-<!--
-Don't miss the full getting started guide to set up your new package:
-https://github.com/napari/cookiecutter-napari-plugin#getting-started
-
-and review the napari docs for plugin developers:
-https://napari.org/stable/plugins/index.html
--->
+----------------------------------
 
 ## Installation
 
