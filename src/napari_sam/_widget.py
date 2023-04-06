@@ -6,6 +6,7 @@ from enum import Enum
 from collections import deque
 import inspect
 from segment_anything import SamPredictor, sam_model_registry
+from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
 from napari_sam.utils import get_weights_path, get_cached_weight_types
 import torch
 from vispy.util.keys import CONTROL
@@ -68,9 +69,9 @@ class SamWidget(QWidget):
         self.rb_bbox.setStyleSheet("color: gray")
         self.layout().addWidget(self.rb_bbox)
 
-        self.rb_auto = QRadioButton("Everything (WIP)")
-        self.rb_auto.setEnabled(False)
-        self.rb_auto.setStyleSheet("color: gray")
+        self.rb_auto = QRadioButton("Everything")
+        # self.rb_auto.setEnabled(False)
+        # self.rb_auto.setStyleSheet("color: gray")
         self.layout().addWidget(self.rb_auto)
 
         self.btn_activate = QPushButton("Activate")
@@ -204,14 +205,17 @@ class SamWidget(QWidget):
         )
         self.sam_model.to(self.device)
         self.sam_predictor = SamPredictor(self.sam_model)
+        self.sam_anything_predictor = SamAutomaticMaskGenerator(self.sam_model)
         self.set_image()
         self.is_model_loaded = True
         self._check_activate_btn()
 
     def _activate(self):
-        if not self.is_active:
+        if not self.is_active and self.rb_click.isChecked():
             self.is_active = True
             self.btn_activate.setText("Deactivate")
+            self.rb_bbox.setEnabled(False)
+            self.rb_auto.setEnabled(False)
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
@@ -247,6 +251,26 @@ class SamWidget(QWidget):
             # def tmp(layer):
             #     print("sdsd")
 
+        elif not self.is_active and self.rb_auto.isChecked():
+            self.is_active = True
+            self.btn_activate.setText("Deactivate")
+            self.rb_bbox.setEnabled(False)
+            self.rb_click.setEnabled(False)
+            self.image_name = self.cb_image_layers.currentText()
+            self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
+            self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
+            self.annotator_mode = AnnotatorMode.AUTO
+
+            if self.image_layer.ndim != 2:
+                raise RuntimeError("Only 2D images are supported at the moment.")
+            image = self.image_layer.data
+            if not self.image_layer.rgb:
+                image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
+            image = image[..., :3]  # Remove a potential alpha channel
+            records = self.sam_anything_predictor.generate(image)
+            masks = np.asarray([record["segmentation"] for record in records])
+            prediction = np.argmax(masks, axis=0)
+            self.label_layer.data = prediction
         else:
             self._deactivate()
 
@@ -264,6 +288,8 @@ class SamWidget(QWidget):
         self.point_coords = []
         self.point_labels = []
         self.sam_logits = None
+        self.rb_click.setEnabled(True)
+        self.rb_auto.setEnabled(True)
         self._reset_history()
 
     def callback_click(self, layer, event):
