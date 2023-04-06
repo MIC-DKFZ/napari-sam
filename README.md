@@ -25,12 +25,9 @@ https://napari.org/stable/plugins/index.html
 
 The plugin requires `python>=3.8`, as well as `pytorch>=1.7` and `torchvision>=0.8`. Please follow the instructions here to install both PyTorch and TorchVision dependencies. Installing both PyTorch and TorchVision with CUDA support is strongly recommended.
 
-Further you need to install `segment-anything` from Meta AI:
-
-    pip install git+https://github.com/facebookresearch/segment-anything.git
-
 You can install `napari-sam` via [pip]:
 
+    pip install git+https://github.com/facebookresearch/segment-anything.git
     pip install napari-sam
 
 
