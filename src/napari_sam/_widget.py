@@ -99,6 +99,8 @@ class SamWidget(QWidget):
         self.point_coords = []
         self.point_labels = []
 
+        self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
         cached_weight_types = get_cached_weight_types(model_types)
@@ -221,8 +223,10 @@ class SamWidget(QWidget):
 
             self.set_image()
 
-            self.points_layer = self.viewer.add_points(name="Ignore this layer")
+            selected_layer = self.viewer.layers.selection.active
+            self.points_layer = self.viewer.add_points(name="Ignore this layer <hidden>")
             self.points_layer.editable = False
+            self.viewer.layers.selection.active = selected_layer
 
             @self.label_layer.bind_key('Control-Z')
             def on_undo(layer):
@@ -288,8 +292,11 @@ class SamWidget(QWidget):
                 colors.append("green")
             else:
                 colors.append("red")
+
+        selected_layer = self.viewer.layers.selection.active
         self.viewer.layers.remove(self.points_layer)
-        self.points_layer = self.viewer.add_points(name="Ignore this layer", data=np.asarray(self.point_coords), face_color=colors)
+        self.points_layer = self.viewer.add_points(name="Ignore this layer <hidden>", data=np.asarray(self.point_coords), face_color=colors)
+        self.viewer.layers.selection.active = selected_layer
 
         prediction, _, self.sam_logits = self.sam_predictor.predict(
             point_coords=np.flip(self.point_coords, axis=-1),
@@ -370,13 +377,12 @@ class SamWidget(QWidget):
         self._load_history(
             self._undo_history, self._redo_history, undoing=True
         )
-        if self.current_label > 0:
-            self.current_label -= 1
-            del self.bubbles[-1]
 
     def redo(self):
         self._load_history(
             self._redo_history, self._undo_history, undoing=False
         )
-        self.current_label += 1
-        raise RuntimeError("Redo currently not supported as bubble history is not implemented.")
+        raise RuntimeError("Redo currently not supported.")
+
+    def _myfilter(self, row, parent):
+        return "<hidden>" not in self.viewer.layers[row].name
