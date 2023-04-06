@@ -1,4 +1,4 @@
-# napari-sam
+# Segment Anything Model (SAM) in Napari
 
 [![License Apache Software License 2.0](https://img.shields.io/pypi/l/napari-sam.svg?color=green)](https://github.com/MIC-DKFZ/napari-sam/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/napari-sam.svg?color=green)](https://pypi.org/project/napari-sam)
@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/MIC-DKFZ/napari-sam/branch/main/graph/badge.svg)](https://codecov.io/gh/MIC-DKFZ/napari-sam)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-sam)](https://napari-hub.org/plugins/napari-sam)
 
-Segment anything with Meta AI's new SAM model!
+Segment anything with Meta AI's new SAM model with thi Napari plugin!
 
 ----------------------------------
 
