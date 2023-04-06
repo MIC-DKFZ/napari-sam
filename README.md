@@ -10,8 +10,13 @@
 Segment anything with Meta AI's new SAM model!
 
 ----------------------------------
+<h2 align="center">SAM in Napari demo</h2>
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=OPE1Xnw487E">
+    <img src="https://img.youtube.com/vi/OPE1Xnw487E/0.jpg" alt="SAM Demo">
+  </a>
+</div>
 
-[![SAM Demo](https://img.youtube.com/vi/OPE1Xnw487E/0.jpg)](https://www.youtube.com/watch?v=OPE1Xnw487E)
 
 ----------------------------------
 
