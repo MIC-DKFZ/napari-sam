@@ -10,7 +10,8 @@
 Segment anything with Meta AI's new SAM model with thi Napari plugin!
 
 SAM is the new segmentation system from Meta AI capable of **one-click segmentation of any object** and now our plugin neatly integrates this into Napari.
-We already extended SAMs click-based foreground separation to full **click-based semantic segmentation & instance segmentation** will soon follow!
+
+We already **extended** SAMs click-based foreground separation to full **click-based semantic segmentation & instance segmentation** will soon follow!
 
 ----------------------------------
 
