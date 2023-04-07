@@ -13,7 +13,16 @@ SAM is the new segmentation system from Meta AI capable of **one-click segmentat
 We already extended SAMs click-based foreground separation to full **click-based semantic segmentation & instance segmentation** will soon follow!
 
 ----------------------------------
-
+<div style="display: flex; justify-content: center;">
+  <div style="text-align: center; margin-right: 50px;">
+    <img src="cats_instance.png" width="200" alt="instance">
+    <p><em>SAM's everything mode</em></p>
+  </div>
+  <div style="text-align: center;">
+    <img src="cats_semantic.png" width="200" alt="semantic">
+    <p><em>Our click-based semantic segmentation mode</em></p>
+  </div>
+</div>
 <h2 align="center">SAM in Napari demo</h2>
 <p align="center"><em>Click to play the video</em></p>
 <div align="center">
