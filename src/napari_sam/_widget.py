@@ -377,8 +377,7 @@ class SamWidget(QWidget):
         if points is not None:
             for label, label_points in points.items():
                 points_flattened.extend(label_points)
-                # color = self.label_layer.colormap.colorbar[0, label, :3] / 255.0
-                color = self.label_layer.colormap.colors[label, :3]  # TODO: Still wrong color
+                color = self.label_layer.get_color(label)
                 colors = [color] * len(label_points)
                 colors_flattended.extend(colors)
 
