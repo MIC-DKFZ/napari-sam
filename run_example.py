@@ -7,7 +7,7 @@ import numpy as np
 viewer = Viewer()
 viewer.window.add_dock_widget(SamWidget(viewer))
 
-image = Image.open("C:/Users/Cookie/Downloads/proxy-image2.jpg")
+image = Image.open("C:/Users/Cookie/Downloads/cats.jpg")
 image = np.array(image)
 layer_1 = viewer.add_image(image)
 viewer.add_labels(np.zeros_like(image), name="labels")

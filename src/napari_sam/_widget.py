@@ -11,6 +11,7 @@ from napari_sam.utils import get_weights_path, get_cached_weight_types
 import torch
 from vispy.util.keys import CONTROL
 import copy
+import warnings
 
 
 class AnnotatorMode(Enum):
@@ -83,7 +84,9 @@ class SamWidget(QWidget):
         self.l_info = QLabel("Info: \n \n"
                              "Positive Click: Middle Mouse Button\n \n"
                              "Negative Click: Control + Middle Mouse Button \n \n"
-                             "Undo: Control + Z")
+                             "Undo: Control + Z \n \n"
+                             "Select Point: Left Click \n \n"
+                             "Delete Selected Point: Delete")
         # self.l_info_positive = QLabel("Middle Mouse Button: Positive Click")
         # self.l_info_negative = QLabel("Control + Middle Mouse Button: Negative Click")
         # self.l_info_undo = QLabel("Undo: Control + Z")
@@ -96,7 +99,10 @@ class SamWidget(QWidget):
         self.image_layer = None
         self.label_layer = None
         self.label_layer_changes = None
+        self.label_color_mapping = None
         self.points_layer = None
+        self.points_layer_name = "Ignore this layer"  # "Ignore this layer <hidden>"
+        self.old_points = np.zeros(0)
 
         self.init_comboboxes()
 
@@ -228,6 +234,7 @@ class SamWidget(QWidget):
             self.label_layer.keymap = {}
             self.widget_callbacks = []
             self.annotator_mode = AnnotatorMode.CLICK
+            self.create_label_color_mapping()
 
             self._history_limit = self.label_layer._history_limit
             self._reset_history()
@@ -241,13 +248,20 @@ class SamWidget(QWidget):
             def on_undo(layer):
                 """Undo the last paint or fill action since the view slice has changed."""
                 self.undo()
-                layer.undo()
+                self.label_layer.undo()
+                self.label_layer.data = self.label_layer.data
+                print(len(self.points_layer.data))
 
             @self.label_layer.bind_key('Control-Shift-Z')
             def on_redo(layer):
                 """Redo any previously undone actions."""
                 self.redo()
-                layer.redo()
+                self.label_layer.redo()
+                self.label_layer.data = self.label_layer.data
+
+            @self.viewer.bind_key('Delete')
+            def on_delete(layer):
+                self.callback_delete()
 
             # @self.viewer.bind_key('Control-RightClick')
             # def tmp(layer):
@@ -302,6 +316,15 @@ class SamWidget(QWidget):
         self.rb_auto.setStyleSheet("color: black")
         self._reset_history()
 
+    def create_label_color_mapping(self, num_labels=1000):
+        if self.label_layer is not None:
+            self.label_color_mapping = {"label_mapping": {}, "color_mapping": {}}
+            for label in range(num_labels):
+                color = self.label_layer.get_color(label)
+                self.label_color_mapping["label_mapping"][label] = color
+                self.label_color_mapping["color_mapping"][str(color)] = label
+
+
     def callback_click(self, layer, event):
         if self.annotator_mode == AnnotatorMode.CLICK:
             data_coordinates = self.image_layer.world_to_data(event.position)
@@ -312,6 +335,23 @@ class SamWidget(QWidget):
             elif CONTROL in event.modifiers and event.button == 3:  # Negative middle click
                 self.do_click(coords, 0)
                 yield
+            elif event.button == 1 and self.points_layer is not None and len(self.points_layer.data) > 0:
+                # Find the closest point to the mouse click
+                distances = np.linalg.norm(self.points_layer.data - coords, axis=1)
+                closest_point_idx = np.argmin(distances)
+                closest_point_distance = distances[closest_point_idx]
+
+                # Select the closest point if it's within 5 pixels of the click
+                if closest_point_distance <= 5:
+                    self.points_layer.selected_data = {closest_point_idx}
+                else:
+                    self.points_layer.selected_data = set()
+
+    def callback_delete(self):
+        selected_points = list(self.points_layer.selected_data)
+        if len(selected_points) > 0:
+            self.points_layer.data = np.delete(self.points_layer.data, selected_points[0], axis=0)
+            self.on_points_changed(None)
 
     def set_image(self):
         if self.image_layer is not None:
@@ -333,7 +373,9 @@ class SamWidget(QWidget):
         self.points[self.point_label].append(coords)
 
         self.run(self.points, self.point_label)
-        self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
     def run(self, points, point_label):
         self.update_points_layer(points)
@@ -361,14 +403,17 @@ class SamWidget(QWidget):
 
         changed_indices = np.where(prediction == 1)
         index_labels_old = self.label_layer.data[changed_indices]
+        self.label_layer.data[self.label_layer.data == point_label] = 0
         self.label_layer.data[prediction] = point_label
         index_labels_new = self.label_layer.data[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
         self.label_layer.data = self.label_layer.data
-        self.label_layer.refresh()
+        # self.label_layer.refresh()
 
     def update_points_layer(self, points):
-        selected_layer = self.viewer.layers.selection.active
+        selected_layer = None
+        if self.viewer.layers.selection.active != self.points_layer:
+            selected_layer = self.viewer.layers.selection.active
         if self.points_layer is not None:
             self.viewer.layers.remove(self.points_layer)
 
@@ -377,13 +422,71 @@ class SamWidget(QWidget):
         if points is not None:
             for label, label_points in points.items():
                 points_flattened.extend(label_points)
-                color = self.label_layer.get_color(label)
+                color = self.label_color_mapping["label_mapping"][label]
                 colors = [color] * len(label_points)
                 colors_flattended.extend(colors)
 
-        self.points_layer = self.viewer.add_points(name="Ignore this layer <hidden>", data=np.asarray(points_flattened), face_color=colors_flattended)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended)
+        self.points_layer.editable = False
+        self.old_points = copy.deepcopy(self.points_layer.data)
 
-        self.viewer.layers.selection.active = selected_layer
+        # self.points_layer.events.data.connect(self.on_points_changed)
+
+        if selected_layer is not None:
+            self.viewer.layers.selection.active = selected_layer
+        self.points_layer.refresh()
+
+    def on_points_changed(self, event):
+        self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
+        old_point, new_point = self.find_changed_point(self.old_points, self.points_layer.data)
+        label = self.find_point_label(old_point)
+        index_to_remove = np.where((self.points[label] == old_point).all(axis=1))[0]
+        self.points[label] = np.delete(self.points[label], index_to_remove, axis=0).tolist()
+        if len(self.points[label]) == 0:
+            del self.points[label]
+        if new_point is not None:
+            self.points[label].append(new_point)
+        self.point_label = label
+        self.sam_logits = None
+        self.run(self.points, self.point_label)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+
+    def find_changed_point(self, old_points, new_points):
+        # changed_point = None
+        # changed_label = None
+        # for label, label_points in self.points.items():
+        #     for point in label_points:
+        #         is_unchanged = False
+        #         for point_layer in self.points_layer.data:
+        #             if np.array_equal(point_layer, point):
+        #                 is_unchanged = True
+        #         if not is_unchanged:
+        #             return point, label
+        # if changed_point is None:
+        #     raise RuntimeError("Could not identify a changed point.")
+        old_point = np.array([x for x in old_points if not np.any((x == new_points).all(1))])
+        new_point = np.array([x for x in new_points if not np.any((x == old_points).all(1))])
+
+        if len(old_point) != 1 or (len(new_point) != 0 and len(new_point) != 1):
+            raise RuntimeError("Could not identify a changed point.")
+
+        old_point = old_point[0]
+        if len(new_point) == 0:
+            new_point = None
+        else:
+            new_point = new_point[0]
+
+        return old_point, new_point
+
+    def find_point_label(self, point):
+        for label, label_points in self.points.items():
+            if np.in1d(point, label_points).all(axis=0):
+                return label
+        raise RuntimeError("Could not identify label.")
 
     def remove_all_widget_callbacks(self):
         callback_types = ['mouse_double_click_callbacks', 'mouse_drag_callbacks', 'mouse_move_callbacks',
