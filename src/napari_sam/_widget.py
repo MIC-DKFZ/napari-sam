@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox
 from qtpy import QtCore
 import napari
 import numpy as np
@@ -21,12 +21,18 @@ class AnnotatorMode(Enum):
     AUTO = 3
 
 
+class SegmentationMode(Enum):
+    SEMANTIC = 0
+    INSTANCE = 1
+
+
 class SamWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
 
         self.annotator_mode = AnnotatorMode.NONE
+        self.segmentation_mode = SegmentationMode.SEMANTIC
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -61,19 +67,42 @@ class SamWidget(QWidget):
 
         self.comboboxes = [{"combobox": self.cb_image_layers, "layer_type": "image"}, {"combobox": self.cb_label_layers, "layer_type": "labels"}]
 
+        self.g_annotation = QGroupBox("Annotation mode")
+        self.l_annotation = QVBoxLayout()
+
         self.rb_click = QRadioButton("Click")
         self.rb_click.setChecked(True)
-        self.layout().addWidget(self.rb_click)
+        self.l_annotation.addWidget(self.rb_click)
 
         self.rb_bbox = QRadioButton("Bounding Box (WIP)")
         self.rb_bbox.setEnabled(False)
         self.rb_bbox.setStyleSheet("color: gray")
-        self.layout().addWidget(self.rb_bbox)
+        self.l_annotation.addWidget(self.rb_bbox)
 
         self.rb_auto = QRadioButton("Everything")
         # self.rb_auto.setEnabled(False)
         # self.rb_auto.setStyleSheet("color: gray")
-        self.layout().addWidget(self.rb_auto)
+        self.l_annotation.addWidget(self.rb_auto)
+
+        self.g_annotation.setLayout(self.l_annotation)
+        self.layout().addWidget(self.g_annotation)
+
+        self.g_segmentation = QGroupBox("Segmentation mode")
+        self.l_segmentation = QVBoxLayout()
+
+        self.rb_semantic = QRadioButton("Semantic")
+        self.rb_semantic.setChecked(True)
+        # self.rb_semantic.setEnabled(False)
+        # self.rb_semantic.setStyleSheet("color: gray")
+        self.l_segmentation.addWidget(self.rb_semantic)
+
+        self.rb_instance = QRadioButton("Instance")
+        # self.rb_instance.setEnabled(False)
+        # self.rb_instance.setStyleSheet("color: gray")
+        self.l_segmentation.addWidget(self.rb_instance)
+
+        self.g_segmentation.setLayout(self.l_segmentation)
+        self.layout().addWidget(self.g_segmentation)
 
         self.btn_activate = QPushButton("Activate")
         self.btn_activate.clicked.connect(self._activate)
@@ -205,7 +234,6 @@ class SamWidget(QWidget):
             self.btn_activate.setEnabled(True)
         else:
             self.btn_activate.setEnabled(False)
-            self._deactivate()
 
     def _load_model(self):
         model_types = list(sam_model_registry.keys())
@@ -220,85 +248,92 @@ class SamWidget(QWidget):
         self._check_activate_btn()
 
     def _activate(self):
-        if not self.is_active and self.rb_click.isChecked():
+        if not self.is_active:
             self.is_active = True
             self.btn_activate.setText("Deactivate")
-            self.rb_bbox.setEnabled(False)
-            self.rb_auto.setEnabled(False)
-            self.rb_bbox.setStyleSheet("color: gray")
-            self.rb_auto.setStyleSheet("color: gray")
+            self.btn_load_model.setEnabled(False)
+            self.cb_model_type.setEnabled(False)
+            self.cb_image_layers.setEnabled(False)
+            self.cb_label_layers.setEnabled(False)
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
             self.label_layer_changes = None
-            self.label_layer.keymap = {}
-            self.widget_callbacks = []
-            self.annotator_mode = AnnotatorMode.CLICK
-            self.create_label_color_mapping()
-
-            self._history_limit = self.label_layer._history_limit
-            self._reset_history()
-
-            self.viewer.mouse_drag_callbacks.append(self.callback_click)
-
-            self.set_image()
-            self.update_points_layer(None)
-
-            @self.label_layer.bind_key('Control-Z')
-            def on_undo(layer):
-                """Undo the last paint or fill action since the view slice has changed."""
-                self.undo()
-                self.label_layer.undo()
-                self.label_layer.data = self.label_layer.data
-                print(len(self.points_layer.data))
-
-            @self.label_layer.bind_key('Control-Shift-Z')
-            def on_redo(layer):
-                """Redo any previously undone actions."""
-                self.redo()
-                self.label_layer.redo()
-                self.label_layer.data = self.label_layer.data
-
-            @self.viewer.bind_key('Delete')
-            def on_delete(layer):
-                self.callback_delete()
-
-            # @self.viewer.bind_key('Control-RightClick')
-            # def tmp(layer):
-            #     print("sdsd")
-
-        elif not self.is_active and self.rb_auto.isChecked():
-            self.is_active = True
-            self.btn_activate.setText("Deactivate")
-            self.rb_bbox.setEnabled(False)
-            self.rb_click.setEnabled(False)
-            self.rb_bbox.setStyleSheet("color: gray")
-            self.rb_click.setStyleSheet("color: gray")
-            self.image_name = self.cb_image_layers.currentText()
-            self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
-            self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
-            self.label_layer_changes = None
-            self.annotator_mode = AnnotatorMode.AUTO
 
             if self.image_layer.ndim != 2:
                 raise RuntimeError("Only 2D images are supported at the moment.")
-            image = self.image_layer.data
-            if not self.image_layer.rgb:
-                image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
-            image = image[..., :3]  # Remove a potential alpha channel
-            records = self.sam_anything_predictor.generate(image)
-            masks = np.asarray([record["segmentation"] for record in records])
-            prediction = np.argmax(masks, axis=0)
-            self.label_layer.data = prediction
+
+            if self.rb_click.isChecked():
+                self.annotator_mode = AnnotatorMode.CLICK
+                self.rb_bbox.setEnabled(False)
+                self.rb_auto.setEnabled(False)
+                self.rb_bbox.setStyleSheet("color: gray")
+                self.rb_auto.setStyleSheet("color: gray")
+            elif self.rb_bbox.isChecked():
+                self.annotator_mode = AnnotatorMode.BBOX
+                self.rb_click.setEnabled(False)
+                self.rb_auto.setEnabled(False)
+                self.rb_click.setStyleSheet("color: gray")
+                self.rb_auto.setStyleSheet("color: gray")
+            elif self.rb_auto.isChecked():
+                self.annotator_mode = AnnotatorMode.AUTO
+                self.rb_click.setEnabled(False)
+                self.rb_bbox.setEnabled(False)
+                self.rb_click.setStyleSheet("color: gray")
+                self.rb_bbox.setStyleSheet("color: gray")
+            else:
+                raise RuntimeError("Annotator mode not implemented.")
+
+            if self.rb_semantic.isChecked():
+                self.segmentation_mode = SegmentationMode.SEMANTIC
+                self.rb_instance.setEnabled(False)
+                self.rb_instance.setStyleSheet("color: gray")
+            elif self.rb_instance.isChecked():
+                self.segmentation_mode = SegmentationMode.INSTANCE
+                self.rb_semantic.setEnabled(False)
+                self.rb_semantic.setStyleSheet("color: gray")
+            else:
+                raise RuntimeError("Segmentation mode not implemented.")
+
+            if self.annotator_mode == AnnotatorMode.CLICK:
+                self.create_label_color_mapping()
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=FutureWarning)
+                    self._history_limit = self.label_layer._history_limit
+                self._reset_history()
+
+                self.viewer.mouse_drag_callbacks.append(self.callback_click)
+                self.viewer.keymap['Delete'] = self.on_delete
+                self.label_layer.keymap['Control-Z'] = self.on_undo
+                self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
+
+                self.set_image()
+                self.update_points_layer(None)
+
+            elif self.annotator_mode == AnnotatorMode.AUTO:
+                image = self.image_layer.data
+                if not self.image_layer.rgb:
+                    image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
+                image = image[..., :3]  # Remove a potential alpha channel
+                records = self.sam_anything_predictor.generate(image)
+                masks = np.asarray([record["segmentation"] for record in records])
+                prediction = np.argmax(masks, axis=0)
+                self.label_layer.data = prediction
         else:
             self._deactivate()
 
     def _deactivate(self):
         self.is_active = False
         self.btn_activate.setText("Activate")
-        self.remove_all_widget_callbacks()
-        if self.label_layer is not None:
-            self.label_layer.keymap = {}
+        self.btn_load_model.setEnabled(True)
+        self.cb_model_type.setEnabled(True)
+        self.cb_image_layers.setEnabled(True)
+        self.cb_label_layers.setEnabled(True)
+        self.remove_all_widget_callbacks(self.viewer)
+        self.remove_all_widget_callbacks(self.label_layer)
+        # if self.label_layer is not None:
+        #     self.label_layer.keymap = {}
         if self.points_layer is not None:
             self.viewer.layers.remove(self.points_layer)
         self.image_name = None
@@ -314,6 +349,10 @@ class SamWidget(QWidget):
         self.rb_auto.setEnabled(True)
         self.rb_click.setStyleSheet("color: black")
         self.rb_auto.setStyleSheet("color: black")
+        self.rb_semantic.setEnabled(True)
+        self.rb_instance.setEnabled(True)
+        self.rb_semantic.setStyleSheet("color: black")
+        self.rb_instance.setStyleSheet("color: black")
         self._reset_history()
 
     def create_label_color_mapping(self, num_labels=1000):
@@ -347,16 +386,26 @@ class SamWidget(QWidget):
                 else:
                     self.points_layer.selected_data = set()
 
-    def callback_delete(self):
+    def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
             self.points_layer.data = np.delete(self.points_layer.data, selected_points[0], axis=0)
             self.on_points_changed(None)
 
+    def on_undo(self, layer):
+        """Undo the last paint or fill action since the view slice has changed."""
+        self.undo()
+        self.label_layer.undo()
+        self.label_layer.data = self.label_layer.data
+
+    def on_redo(self, layer):
+        """Redo any previously undone actions."""
+        self.redo()
+        self.label_layer.redo()
+        self.label_layer.data = self.label_layer.data
+
     def set_image(self):
         if self.image_layer is not None:
-            if self.image_layer.ndim != 2:
-                raise RuntimeError("Only 2D images are supported at the moment.")
             image = self.image_layer.data
             if not self.image_layer.rgb:
                 image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
@@ -404,7 +453,10 @@ class SamWidget(QWidget):
         changed_indices = np.where(prediction == 1)
         index_labels_old = self.label_layer.data[changed_indices]
         self.label_layer.data[self.label_layer.data == point_label] = 0
-        self.label_layer.data[prediction] = point_label
+        if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
+            self.label_layer.data[prediction] = point_label
+        else:
+            self.label_layer.data[prediction & (self.label_layer.data == 0)] = point_label
         index_labels_new = self.label_layer.data[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
         self.label_layer.data = self.label_layer.data
@@ -488,14 +540,21 @@ class SamWidget(QWidget):
                 return label
         raise RuntimeError("Could not identify label.")
 
-    def remove_all_widget_callbacks(self):
+    def remove_all_widget_callbacks(self, layer):
         callback_types = ['mouse_double_click_callbacks', 'mouse_drag_callbacks', 'mouse_move_callbacks',
-                          'mouse_wheel_callbacks']
+                          'mouse_wheel_callbacks', 'keymap']
         for callback_type in callback_types:
-            callback_list = getattr(self.viewer, callback_type)
-            for callback in callback_list:
-                if inspect.ismethod(callback) and callback.__self__ == self:
-                    callback_list.remove(callback)
+            callbacks = getattr(layer, callback_type)
+            if isinstance(callbacks, list):
+                for callback in callbacks:
+                    if inspect.ismethod(callback) and callback.__self__ == self:
+                        callbacks.remove(callback)
+            elif isinstance(callbacks, dict):
+                for key in list(callbacks.keys()):
+                    if inspect.ismethod(callbacks[key]) and callbacks[key].__self__ == self:
+                        del callbacks[key]
+            else:
+                raise RuntimeError("Could not determine callbacks type.")
 
     def _reset_history(self, event=None):
         self._undo_history = deque()
