@@ -15,9 +15,9 @@ We already **extended** SAMs click-based foreground separation to full **click-b
 
 ----------------------------------
 
-SAM's everything mode             |  Our click-based semantic segmentation mode
-:-------------------------:|:-------------------------:
-![](cats_instance.png)  |  ![](cats_semantic.png)
+Everything mode             |  Click-based semantic segmentation mode |  Click-based instance segmentation mode
+:-------------------------:|:-------------------------:|:-------------------------:
+![](cats_everything.png)  |  ![](cats_semantic.png)  |  ![](cats_instance.png)
 
 ----------------------------------
 <h2 align="center">SAM in Napari demo</h2>
