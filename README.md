@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/MIC-DKFZ/napari-sam/branch/main/graph/badge.svg)](https://codecov.io/gh/MIC-DKFZ/napari-sam)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-sam)](https://napari-hub.org/plugins/napari-sam)
 
-Segment anything with Meta AI's new SAM model with thi Napari plugin!
+Segment anything with our **Napari** integration of Meta AI's new **Segment Anything Model (SAM)**!
 
 SAM is the new segmentation system from Meta AI capable of **one-click segmentation of any object** and now our plugin neatly integrates this into Napari.
 
