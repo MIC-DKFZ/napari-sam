@@ -616,6 +616,8 @@ class SamWidget(QWidget):
                 colors_flattended.extend(colors)
 
         self.point_size = int(np.min(self.image_layer.data.shape[:2]) / 100)
+        if self.point_size == 0:
+            self.point_size = 1
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, edge_color="white", size=self.point_size)
