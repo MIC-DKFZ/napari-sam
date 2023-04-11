@@ -74,6 +74,7 @@ class SamWidget(QWidget):
         self.rb_click = QRadioButton("Click")
         self.rb_click.setChecked(True)
         self.l_annotation.addWidget(self.rb_click)
+        self.rb_click.clicked.connect(self.on_everything_mode_checked)
 
         self.rb_bbox = QRadioButton("Bounding Box (WIP)")
         self.rb_bbox.setEnabled(False)
@@ -84,6 +85,7 @@ class SamWidget(QWidget):
         # self.rb_auto.setEnabled(False)
         # self.rb_auto.setStyleSheet("color: gray")
         self.l_annotation.addWidget(self.rb_auto)
+        self.rb_auto.clicked.connect(self.on_everything_mode_checked)
 
         self.g_annotation.setLayout(self.l_annotation)
         self.layout().addWidget(self.g_annotation)
@@ -111,19 +113,53 @@ class SamWidget(QWidget):
         self.is_active = False
         self.layout().addWidget(self.btn_activate)
 
-        self.l_info = QLabel("Info: \n \n"
-                             "Positive Click: Middle Mouse Button\n \n"
-                             "Negative Click: Control + Middle Mouse Button \n \n"
-                             "Undo: Control + Z \n \n"
-                             "Select Point: Left Click \n \n"
-                             "Delete Selected Point: Delete")
-        # self.l_info_positive = QLabel("Middle Mouse Button: Positive Click")
-        # self.l_info_negative = QLabel("Control + Middle Mouse Button: Negative Click")
-        # self.l_info_undo = QLabel("Undo: Control + Z")
-        self.layout().addWidget(self.l_info)
-        # self.layout().addWidget(self.l_info_positive)
-        # self.layout().addWidget(self.l_info_negative)
-        # self.layout().addWidget(self.l_info_undo)
+        self.g_info_click = QGroupBox("Click Mode")
+        self.l_info_click = QVBoxLayout()
+
+        self.label_info_click = QLabel("Positive Click: Middle Mouse Button\n \n"
+                                 "Negative Click: Control + Middle Mouse Button \n \n"
+                                 "Undo: Control + Z \n \n"
+                                 "Select Point: Left Click \n \n"
+                                 "Delete Selected Point: Delete")
+        self.l_info_click.addWidget(self.label_info_click)
+        self.g_info_click.setLayout(self.l_info_click)
+        self.layout().addWidget(self.g_info_click)
+
+        self.g_info_everything = QGroupBox("Everything Mode")
+        self.l_info_everything = QVBoxLayout()
+
+        self.label_info_everything = QLabel("Creates automatically an instance segmentation \n"
+                                            "of the entire image.\n"
+                                            "No user interaction possible.")
+        self.l_info_everything.addWidget(self.label_info_everything)
+        self.g_info_everything.setLayout(self.l_info_everything)
+        self.layout().addWidget(self.g_info_everything)
+
+        self.g_info_semantic = QGroupBox("Semantic Mode")
+        self.l_info_semantic = QVBoxLayout()
+
+        self.label_info_semantic = QLabel("Enables the user to create a \n"
+                                 "multi-label (semantic) segmentation of different classes.\n \n"
+                                 "All objects from the same class \n"
+                                 "should be given the same label by the user.\n \n"
+                                 "The current label can be changed by the user \n"
+                                 "on the labels layer pane after selecting the labels layer.")
+        self.l_info_semantic.addWidget(self.label_info_semantic)
+        self.g_info_semantic.setLayout(self.l_info_semantic)
+        self.layout().addWidget(self.g_info_semantic)
+
+        self.g_info_instance = QGroupBox("Instance Mode")
+        self.l_info_instance = QVBoxLayout()
+
+        self.label_info_instance = QLabel("Enables the user to create an \n"
+                                 "instance segmentation of different objects.\n \n"
+                                 "Objects can be from the same or different classes,\n"
+                                 "but each object should be given a unique label by the user. \n \n"
+                                 "The current label can be changed by the user \n"
+                                 "on the labels layer pane after selecting the labels layer.")
+        self.l_info_instance.addWidget(self.label_info_instance)
+        self.g_info_instance.setLayout(self.l_info_instance)
+        self.layout().addWidget(self.g_info_instance)
 
         self.image_name = None
         self.image_layer = None
@@ -145,6 +181,16 @@ class SamWidget(QWidget):
         self.point_label = None
 
         self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+
+    def on_everything_mode_checked(self):
+        if self.rb_auto.isChecked():
+            self.rb_semantic.setEnabled(False)
+            self.rb_semantic.setChecked(False)
+            self.rb_semantic.setStyleSheet("color: gray")
+            self.rb_instance.setChecked(True)
+        else:
+            self.rb_semantic.setEnabled(True)
+            self.rb_semantic.setStyleSheet("")
 
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
@@ -351,12 +397,12 @@ class SamWidget(QWidget):
         self.sam_logits = None
         self.rb_click.setEnabled(True)
         self.rb_auto.setEnabled(True)
-        self.rb_click.setStyleSheet("color: black")
-        self.rb_auto.setStyleSheet("color: black")
+        self.rb_click.setStyleSheet("")
+        self.rb_auto.setStyleSheet("")
         self.rb_semantic.setEnabled(True)
         self.rb_instance.setEnabled(True)
-        self.rb_semantic.setStyleSheet("color: black")
-        self.rb_instance.setStyleSheet("color: black")
+        self.rb_semantic.setStyleSheet("")
+        self.rb_instance.setStyleSheet("")
         self._reset_history()
 
     def create_label_color_mapping(self, num_labels=1000):

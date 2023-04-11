@@ -35,6 +35,10 @@ Everything mode             |  Click-based semantic segmentation mode |  Click-b
 
 The plugin requires `python>=3.8`, as well as `pytorch>=1.7` and `torchvision>=0.8`. Please follow the instructions here to install both PyTorch and TorchVision dependencies. Installing both PyTorch and TorchVision with CUDA support is strongly recommended.
 
+Install Napari via [pip]:
+    
+    pip install napari[all]
+
 You can install `napari-sam` via [pip]:
 
     pip install git+https://github.com/facebookresearch/segment-anything.git
@@ -45,6 +49,16 @@ You can install `napari-sam` via [pip]:
 To install latest development version :
 
     pip install git+https://github.com/MIC-DKFZ/napari-sam.git
+
+## Usage
+
+Start Napari from the console with:
+
+    napari
+
+Then navigate to `Plugins -> Segment Anything (napari-sam)` and drag & drop an image into Napari. At last create, a labels layer that will be used for the SAM predictions, by clicking in the layer list on the third button.
+
+You can then auto-download one of the available SAM models (this can take 1-2 minutes),  activate one of the annotations & segmentation modes, and you are ready to go!
 
 
 ## Contributing
@@ -78,3 +92,12 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [tox]: https://tox.readthedocs.io/en/latest/
 [pip]: https://pypi.org/project/pip/
 [PyPI]: https://pypi.org/
+
+# Acknowledgements
+<img src="HI_Logo.png" height="100px" />
+
+<img src="dkfz_logo.png" height="100px" />
+
+napari-sam is developed and maintained by the Applied Computer Vision Lab (ACVL) of [Helmholtz Imaging](http://helmholtz-imaging.de) 
+and the [Division of Medical Image Computing](https://www.dkfz.de/en/mic/index.php) at the 
+[German Cancer Research Center (DKFZ)](https://www.dkfz.de/en/index.html).
