@@ -275,6 +275,8 @@ class SamWidget(QWidget):
 
     def _on_layers_changed_callback(self):
         self._check_activate_btn()
+        if (self.image_layer is not None and self.image_layer not in self.viewer.layers) or (self.label_layer is not None and self.label_layer not in self.viewer.layers):
+            self._deactivate()
 
     def _check_activate_btn(self):
         if self.cb_image_layers.currentText() != "" and self.cb_label_layers.currentText() != "" and self.is_model_loaded:
@@ -378,10 +380,9 @@ class SamWidget(QWidget):
         self.cb_image_layers.setEnabled(True)
         self.cb_label_layers.setEnabled(True)
         self.remove_all_widget_callbacks(self.viewer)
-        self.remove_all_widget_callbacks(self.label_layer)
-        # if self.label_layer is not None:
-        #     self.label_layer.keymap = {}
-        if self.points_layer is not None:
+        if self.label_layer is not None:
+            self.remove_all_widget_callbacks(self.label_layer)
+        if self.points_layer is not None and self.points_layer in self.viewer.layers:
             self.viewer.layers.remove(self.points_layer)
         self.image_name = None
         self.image_layer = None
