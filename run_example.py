@@ -10,6 +10,6 @@ viewer.window.add_dock_widget(SamWidget(viewer))
 image = Image.open("C:/Users/Cookie/Downloads/cats.jpg")
 image = np.array(image)
 layer_1 = viewer.add_image(image)
-viewer.add_labels(np.zeros_like(image), name="labels")
+viewer.add_labels(np.zeros(image.shape[:2], dtype=np.int), name="labels")
 
 napari.run()
