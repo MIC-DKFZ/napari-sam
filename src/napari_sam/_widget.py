@@ -169,6 +169,7 @@ class SamWidget(QWidget):
         self.points_layer = None
         self.points_layer_name = "Ignore this layer"  # "Ignore this layer <hidden>"
         self.old_points = np.zeros(0)
+        self.point_size = 10
 
         self.init_comboboxes()
 
@@ -614,9 +615,10 @@ class SamWidget(QWidget):
                 colors = [color] * len(label_points)
                 colors_flattended.extend(colors)
 
+        self.point_size = int(np.min(self.image_layer.data.shape[:2]) / 100)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
-            self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended)
+            self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, edge_color="white", size=self.point_size)
         self.points_layer.editable = False
         self.old_points = copy.deepcopy(self.points_layer.data)
 
