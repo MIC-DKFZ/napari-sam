@@ -7,11 +7,12 @@ from collections import deque, defaultdict
 import inspect
 from segment_anything import SamPredictor, sam_model_registry
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
-from napari_sam.utils import get_weights_path, get_cached_weight_types
+from napari_sam.utils import get_weights_path, get_cached_weight_types, normalize
 import torch
 from vispy.util.keys import CONTROL
 import copy
 import warnings
+from tqdm import tqdm
 
 
 class AnnotatorMode(Enum):
@@ -138,6 +139,7 @@ class SamWidget(QWidget):
         self.sam_model = None
         self.sam_predictor = None
         self.sam_logits = None
+        self.sam_features = None
 
         self.points = defaultdict(list)
         self.point_label = None
@@ -260,8 +262,8 @@ class SamWidget(QWidget):
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
             self.label_layer_changes = None
 
-            if self.image_layer.ndim != 2:
-                raise RuntimeError("Only 2D images are supported at the moment.")
+            if self.image_layer.ndim != 2 and self.image_layer.ndim != 3:
+                raise RuntimeError("Only 2D and 3D images are supported.")
 
             if self.rb_click.isChecked():
                 self.annotator_mode = AnnotatorMode.CLICK
@@ -307,6 +309,8 @@ class SamWidget(QWidget):
                 self.viewer.keymap['Delete'] = self.on_delete
                 self.label_layer.keymap['Control-Z'] = self.on_undo
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
+                if self.image_layer.ndim == 3:
+                    self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
 
                 self.set_image()
                 self.update_points_layer(None)
@@ -363,7 +367,6 @@ class SamWidget(QWidget):
                 self.label_color_mapping["label_mapping"][label] = color
                 self.label_color_mapping["color_mapping"][str(color)] = label
 
-
     def callback_click(self, layer, event):
         if self.annotator_mode == AnnotatorMode.CLICK:
             data_coordinates = self.image_layer.world_to_data(event.position)
@@ -404,13 +407,30 @@ class SamWidget(QWidget):
         self.label_layer.redo()
         self.label_layer.data = self.label_layer.data
 
+    def on_contrast_limits_change(self):
+        print("Contrast limit change")
+        self.set_image()
+
     def set_image(self):
-        if self.image_layer is not None:
-            image = self.image_layer.data
+        image = self.image_layer.data
+        if self.image_layer.ndim == 2:
             if not self.image_layer.rgb:
                 image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
             image = image[..., :3]  # Remove a potential alpha channel
             self.sam_predictor.set_image(image)
+            self.sam_features = self.sam_predictor.features
+        elif self.image_layer.ndim == 3:
+            if not self.image_layer.rgb:
+                image = np.stack((image,) * 3, axis=-1)  # Expand to 3-channel image
+            image = image[..., :3]  # Remove a potential alpha channel
+            contrast_limits = self.image_layer.contrast_limits
+            image = normalize(image, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
+            self.sam_features = []
+            for index in tqdm(range(image.shape[0]), desc="Creating SAM image embedding"):
+                self.sam_predictor.set_image(image[index, :, :, :])
+                self.sam_features.append(self.sam_predictor.features)
+        else:
+            raise RuntimeError("Only 2D and 3D images are supported.")
 
     def do_click(self, coords, is_positive):
         self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
@@ -438,15 +458,7 @@ class SamWidget(QWidget):
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
 
-            points_flattened = np.flip(points_flattened, axis=-1)
-
-            prediction, _, self.sam_logits = self.sam_predictor.predict(
-                point_coords=points_flattened,
-                point_labels=np.asarray(labels_flattended),
-                mask_input=self.sam_logits,
-                multimask_output=False,
-            )
-            prediction = prediction[0]
+            prediction, self.sam_logits = self.predict(points_flattened, labels_flattended)
         else:
             prediction = np.zeros_like(self.label_layer.data)
 
@@ -454,13 +466,73 @@ class SamWidget(QWidget):
         index_labels_old = self.label_layer.data[changed_indices]
         self.label_layer.data[self.label_layer.data == point_label] = 0
         if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
-            self.label_layer.data[prediction] = point_label
+            self.label_layer.data[prediction == 1] = point_label
         else:
             self.label_layer.data[prediction & (self.label_layer.data == 0)] = point_label
         index_labels_new = self.label_layer.data[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
         self.label_layer.data = self.label_layer.data
         # self.label_layer.refresh()
+
+    def predict(self, points, labels):
+        points = np.asarray(points)
+        if self.image_layer.ndim == 2:
+            self.sam_predictor.features = self.sam_features
+            prediction, _, sam_logits = self.sam_predictor.predict(
+                point_coords=np.flip(points, axis=-1),
+                point_labels=np.asarray(labels),
+                mask_input=self.sam_logits,
+                multimask_output=False,
+            )
+            prediction = prediction[0]
+        elif self.image_layer.ndim == 3:
+            x_coords = np.unique(points[:, 0])
+            groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+            image_point_proposals, image_label_proposals = [], []
+
+            for x_coord, group_points in groups.items():
+                group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+                group_points = [point[1:] for point in group_points]
+                self.sam_predictor.features = self.sam_features[x_coord - 1]
+                prediction_yz, _, _ = self.sam_predictor.predict(
+                    point_coords=np.flip(group_points, axis=-1),
+                    point_labels=np.asarray(group_labels),
+                    mask_input=self.sam_logits,
+                    multimask_output=False,
+                )
+                prediction_yz = prediction_yz[0]
+
+                for i, point in enumerate(group_points):
+                    y_coord = point[0]
+                    prediction_z = prediction_yz[y_coord, :]
+                    point_proposals_z = np.asarray(list(zip(*np.where(prediction_z)))).flatten()
+                    point_proposals = [(x_coord, y_coord, point_proposal_z) for point_proposal_z in point_proposals_z]
+                    image_point_proposals.extend(point_proposals)
+                    image_label_proposals.extend([group_labels[i]] * len(point_proposals))
+
+            image_point_proposals = np.asarray(image_point_proposals)
+            image_label_proposals = np.asarray(image_label_proposals)
+            x_coords = np.unique(image_point_proposals[:, 0])
+            groups = {x_coord: list(image_point_proposals[image_point_proposals[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+
+            prediction = np.zeros_like(self.label_layer.data)
+            for x_coord, group_points in groups.items():
+                group_labels = [image_label_proposals[np.argwhere(np.all(image_point_proposals == point, axis=1)).flatten()[0]] for point in group_points]
+                group_points = [point[1:] for point in group_points]
+                self.sam_predictor.features = self.sam_features[x_coord - 1]
+                prediction_yz, _, _ = self.sam_predictor.predict(
+                    point_coords=np.flip(group_points, axis=-1),
+                    point_labels=np.asarray(group_labels),
+                    mask_input=self.sam_logits,
+                    multimask_output=False,
+                )
+                prediction_yz = prediction_yz[0]
+                prediction[x_coord, :, :] = prediction_yz  # prediction_yz is 2D
+            print("")
+            sam_logits = None  # TODO: Use sam_logits
+        else:
+            raise RuntimeError("Only 2D and 3D images are supported.")
+        return prediction, sam_logits
 
     def update_points_layer(self, points):
         selected_layer = None
