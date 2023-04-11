@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication
 from qtpy import QtCore
 import napari
 import numpy as np
@@ -468,6 +468,12 @@ class SamWidget(QWidget):
             self.sam_predictor.set_image(image)
             self.sam_features = self.sam_predictor.features
         elif self.image_layer.ndim == 3:
+            l_creating_features= QLabel("Creating SAM image embedding:")
+            self.layout().addWidget(l_creating_features)
+            progress_bar = QProgressBar(self)
+            progress_bar.setMaximum(image.shape[0])
+            progress_bar.setValue(0)
+            self.layout().addWidget(progress_bar)
             if not self.image_layer.rgb:
                 image = np.stack((image,) * 3, axis=-1)  # Expand to 3-channel image
             image = image[..., :3]  # Remove a potential alpha channel
@@ -477,6 +483,10 @@ class SamWidget(QWidget):
             for index in tqdm(range(image.shape[0]), desc="Creating SAM image embedding"):
                 self.sam_predictor.set_image(image[index, :, :, :])
                 self.sam_features.append(self.sam_predictor.features)
+                progress_bar.setValue(index+1)
+                QApplication.processEvents()
+                progress_bar.deleteLater()
+                l_creating_features.deleteLater()
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
 
