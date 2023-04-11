@@ -64,3 +64,18 @@ def get_cached_weight_types(model_types):
             cached_weight_types[model_type] = False
 
     return cached_weight_types
+
+
+def normalize(x, source_limits=None, target_limits=None):
+    if source_limits is None:
+        source_limits = (x.min(), x.max())
+
+    if target_limits is None:
+        target_limits = (0, 1)
+
+    if source_limits[0] == source_limits[1] or target_limits[0] == target_limits[1]:
+        return x * 0
+    else:
+        x_std = (x - source_limits[0]) / (source_limits[1] - source_limits[0])
+        x_scaled = x_std * (target_limits[1] - target_limits[0]) + target_limits[0]
+        return x_scaled
