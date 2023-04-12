@@ -195,7 +195,8 @@ class SamWidget(QWidget):
             self.rb_semantic.setStyleSheet("")
 
     def on_image_change(self):
-        if self.viewer.layers[self.cb_image_layers.currentText()].ndim > 2:
+        image_name = self.cb_image_layers.currentText()
+        if image_name != "" and self.viewer.layers[image_name].ndim > 2:
             self.rb_auto.setEnabled(False)
             self.rb_auto.setChecked(False)
             self.rb_click.setChecked(True)
@@ -203,7 +204,6 @@ class SamWidget(QWidget):
         else:
             self.rb_auto.setEnabled(True)
             self.rb_auto.setStyleSheet("")
-
 
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
@@ -444,8 +444,8 @@ class SamWidget(QWidget):
                 closest_point_idx = np.argmin(distances)
                 closest_point_distance = distances[closest_point_idx]
 
-                # Select the closest point if it's within 5 pixels of the click
-                if closest_point_distance <= 5:
+                # Select the closest point if it's within self.point_size pixels of the click
+                if closest_point_distance <= self.point_size:
                     self.points_layer.selected_data = {closest_point_idx}
                 else:
                     self.points_layer.selected_data = set()
