@@ -539,7 +539,7 @@ class SamWidget(QWidget):
         if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
             self.label_layer.data[prediction == 1] = point_label
         else:
-            self.label_layer.data[prediction & (self.label_layer.data == 0)] = point_label
+            self.label_layer.data[(prediction == 1) & (self.label_layer.data == 0)] = point_label
         index_labels_new = self.label_layer.data[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
         self.label_layer.data = self.label_layer.data
