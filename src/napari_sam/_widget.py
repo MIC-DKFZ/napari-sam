@@ -57,6 +57,7 @@ class SamWidget(QWidget):
 
         self.cb_image_layers = QComboBox()
         self.cb_image_layers.addItems(self.get_layer_names("image"))
+        self.cb_image_layers.currentTextChanged.connect(self.on_image_change)
         self.layout().addWidget(self.cb_image_layers)
 
         l_label_layer = QLabel("Select output labels layer:")
@@ -193,6 +194,17 @@ class SamWidget(QWidget):
             self.rb_semantic.setEnabled(True)
             self.rb_semantic.setStyleSheet("")
 
+    def on_image_change(self):
+        if self.viewer.layers[self.cb_image_layers.currentText()].ndim > 2:
+            self.rb_auto.setEnabled(False)
+            self.rb_auto.setChecked(False)
+            self.rb_click.setChecked(True)
+            self.rb_auto.setStyleSheet("color: gray")
+        else:
+            self.rb_auto.setEnabled(True)
+            self.rb_auto.setStyleSheet("")
+
+
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
         cached_weight_types = get_cached_weight_types(model_types)
@@ -274,6 +286,7 @@ class SamWidget(QWidget):
 
     def _init_comboboxes_callback(self):
         self._check_activate_btn()
+        self.on_image_change()
 
     def _on_layers_changed_callback(self):
         self._check_activate_btn()

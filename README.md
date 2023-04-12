@@ -13,6 +13,8 @@ SAM is the new segmentation system from Meta AI capable of **one-click segmentat
 
 We have already **extended** SAM's click-based foreground separation to full **click-based semantic segmentation and instance segmentation**!
 
+At last, our SAM integration supports both **2D and 3D images**!
+
 ----------------------------------
 
 Everything mode             |  Click-based semantic segmentation mode |  Click-based instance segmentation mode
