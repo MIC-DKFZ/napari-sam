@@ -327,6 +327,11 @@ class SamWidget(QWidget):
             if self.image_layer.ndim != 2 and self.image_layer.ndim != 3:
                 raise RuntimeError("Only 2D and 3D images are supported.")
 
+            if self.image_layer.ndim == 2:
+                self.sam_logits = None
+            else:
+                self.sam_logits = [None] * self.image_layer.data.shape[0]
+
             if self.rb_click.isChecked():
                 self.annotator_mode = AnnotatorMode.CLICK
                 self.rb_bbox.setEnabled(False)
@@ -529,13 +534,14 @@ class SamWidget(QWidget):
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
 
-            prediction, self.sam_logits = self.predict(points_flattened, labels_flattended)
+            prediction, predicted_slices = self.predict(points_flattened, labels_flattended)
         else:
             prediction = np.zeros_like(self.label_layer.data)
+            predicted_slices = slice(None, None)
 
         changed_indices = np.where(prediction == 1)
         index_labels_old = self.label_layer.data[changed_indices]
-        self.label_layer.data[self.label_layer.data == point_label] = 0
+        self.label_layer.data[predicted_slices][self.label_layer.data[predicted_slices] == point_label] = 0
         if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
             self.label_layer.data[prediction == 1] = point_label
         else:
@@ -543,36 +549,54 @@ class SamWidget(QWidget):
         index_labels_new = self.label_layer.data[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
         self.label_layer.data = self.label_layer.data
+        self.old_points = copy.deepcopy(self.points_layer.data)
         # self.label_layer.refresh()
 
     def predict(self, points, labels):
         points = np.asarray(points)
+        old_point, new_point = self.find_changed_point(np.asarray(self.old_points), points)
         if self.image_layer.ndim == 2:
             self.sam_predictor.features = self.sam_features
-            prediction, _, sam_logits = self.sam_predictor.predict(
+            prediction, _, self.sam_logits = self.sam_predictor.predict(
                 point_coords=np.flip(points, axis=-1),
                 point_labels=np.asarray(labels),
                 mask_input=self.sam_logits,
                 multimask_output=False,
             )
             prediction = prediction[0]
+            predicted_slices = None
         elif self.image_layer.ndim == 3:
             x_coords = np.unique(points[:, 0])
             groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+            x_coord = new_point[0]
             prediction = np.zeros_like(self.label_layer.data)
 
-            for x_coord, group_points in groups.items():
-                group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-                group_points = [point[1:] for point in group_points]
-                self.sam_predictor.features = self.sam_features[x_coord - 1]
-                prediction_yz, _, _ = self.sam_predictor.predict(
-                    point_coords=np.flip(group_points, axis=-1),
-                    point_labels=np.asarray(group_labels),
-                    mask_input=self.sam_logits,
-                    multimask_output=False,
-                )
-                prediction_yz = prediction_yz[0]
-                prediction[x_coord, :, :] = prediction_yz
+            group_points = groups[x_coord]
+            group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+            group_points = [point[1:] for point in group_points]
+            self.sam_predictor.features = self.sam_features[x_coord]
+            prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
+                point_coords=np.flip(group_points, axis=-1),
+                point_labels=np.asarray(group_labels),
+                mask_input=self.sam_logits[x_coord],
+                multimask_output=False,
+            )
+            prediction_yz = prediction_yz[0]
+            prediction[x_coord, :, :] = prediction_yz
+            predicted_slices = x_coord
+
+            # for x_coord, group_points in groups.items():
+            #     group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+            #     group_points = [point[1:] for point in group_points]
+            #     self.sam_predictor.features = self.sam_features[x_coord]
+            #     prediction_yz, _, _ = self.sam_predictor.predict(
+            #         point_coords=np.flip(group_points, axis=-1),
+            #         point_labels=np.asarray(group_labels),
+            #         mask_input=self.sam_logits,
+            #         multimask_output=False,
+            #     )
+            #     prediction_yz = prediction_yz[0]
+            #     prediction[x_coord, :, :] = prediction_yz
             sam_logits = None  # TODO: Use sam_logits
         # elif self.image_layer.ndim == 3:
         #     z_coords = np.unique(points[:, 2])
@@ -621,7 +645,7 @@ class SamWidget(QWidget):
         #     sam_logits = None  # TODO: Use sam_logits
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
-        return prediction, sam_logits
+        return prediction, predicted_slices
 
     def update_points_layer(self, points):
         selected_layer = None
@@ -646,9 +670,6 @@ class SamWidget(QWidget):
             warnings.filterwarnings("ignore", category=UserWarning)
             self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, edge_color="white", size=self.point_size)
         self.points_layer.editable = False
-        self.old_points = copy.deepcopy(self.points_layer.data)
-
-        # self.points_layer.events.data.connect(self.on_points_changed)
 
         if selected_layer is not None:
             self.viewer.layers.selection.active = selected_layer
@@ -672,25 +693,23 @@ class SamWidget(QWidget):
             self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
     def find_changed_point(self, old_points, new_points):
-        # changed_point = None
-        # changed_label = None
-        # for label, label_points in self.points.items():
-        #     for point in label_points:
-        #         is_unchanged = False
-        #         for point_layer in self.points_layer.data:
-        #             if np.array_equal(point_layer, point):
-        #                 is_unchanged = True
-        #         if not is_unchanged:
-        #             return point, label
-        # if changed_point is None:
+        if len(new_points) == 0:
+            old_point = old_points
+        else:
+            old_point = np.array([x for x in old_points if not np.any((x == new_points).all(1))])
+        if len(old_points) == 0:
+            new_point = new_points
+        else:
+            new_point = np.array([x for x in new_points if not np.any((x == old_points).all(1))])
+
+        # if (len(old_point) != 0 and len(old_point) != 1) or (len(new_point) != 0 and len(new_point) != 1):
         #     raise RuntimeError("Could not identify a changed point.")
-        old_point = np.array([x for x in old_points if not np.any((x == new_points).all(1))])
-        new_point = np.array([x for x in new_points if not np.any((x == old_points).all(1))])
 
-        if len(old_point) != 1 or (len(new_point) != 0 and len(new_point) != 1):
-            raise RuntimeError("Could not identify a changed point.")
+        if len(old_point) == 0:
+            old_point = None
+        else:
+            old_point = old_point[0]
 
-        old_point = old_point[0]
         if len(new_point) == 0:
             new_point = None
         else:
