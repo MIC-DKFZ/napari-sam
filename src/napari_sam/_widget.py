@@ -372,15 +372,16 @@ class SamWidget(QWidget):
                     self._history_limit = self.label_layer._history_limit
                 self._reset_history()
 
-                self.viewer.mouse_drag_callbacks.append(self.callback_click)
-                self.viewer.keymap['Delete'] = self.on_delete
-                self.label_layer.keymap['Control-Z'] = self.on_undo
-                self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
                 if self.image_layer.ndim == 3:
                     self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
 
                 self.set_image()
                 self.update_points_layer(None)
+
+                self.viewer.mouse_drag_callbacks.append(self.callback_click)
+                self.viewer.keymap['Delete'] = self.on_delete
+                self.label_layer.keymap['Control-Z'] = self.on_undo
+                self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
 
             elif self.annotator_mode == AnnotatorMode.AUTO:
                 image = self.image_layer.data
