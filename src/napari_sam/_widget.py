@@ -74,17 +74,26 @@ class SamWidget(QWidget):
 
         self.rb_click = QRadioButton("Click")
         self.rb_click.setChecked(True)
+        self.rb_click.setToolTip("Positive Click: Middle Mouse Button\n \n"
+                                 "Negative Click: Control + Middle Mouse Button \n \n"
+                                 "Undo: Control + Z \n \n"
+                                 "Select Point: Left Click \n \n"
+                                 "Delete Selected Point: Delete")
         self.l_annotation.addWidget(self.rb_click)
         self.rb_click.clicked.connect(self.on_everything_mode_checked)
 
         self.rb_bbox = QRadioButton("Bounding Box (WIP)")
         self.rb_bbox.setEnabled(False)
+        self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
         self.rb_bbox.setStyleSheet("color: gray")
         self.l_annotation.addWidget(self.rb_bbox)
 
         self.rb_auto = QRadioButton("Everything")
         # self.rb_auto.setEnabled(False)
         # self.rb_auto.setStyleSheet("color: gray")
+        self.rb_auto.setToolTip("Creates automatically an instance segmentation \n"
+                                            "of the entire image.\n"
+                                            "No user interaction possible.")
         self.l_annotation.addWidget(self.rb_auto)
         self.rb_auto.clicked.connect(self.on_everything_mode_checked)
 
@@ -96,11 +105,23 @@ class SamWidget(QWidget):
 
         self.rb_semantic = QRadioButton("Semantic")
         self.rb_semantic.setChecked(True)
+        self.rb_semantic.setToolTip("Enables the user to create a \n"
+                                 "multi-label (semantic) segmentation of different classes.\n \n"
+                                 "All objects from the same class \n"
+                                 "should be given the same label by the user.\n \n"
+                                 "The current label can be changed by the user \n"
+                                 "on the labels layer pane after selecting the labels layer.")
         # self.rb_semantic.setEnabled(False)
         # self.rb_semantic.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_semantic)
 
         self.rb_instance = QRadioButton("Instance")
+        self.rb_instance.setToolTip("Enables the user to create an \n"
+                                 "instance segmentation of different objects.\n \n"
+                                 "Objects can be from the same or different classes,\n"
+                                 "but each object should be given a unique label by the user. \n \n"
+                                 "The current label can be changed by the user \n"
+                                 "on the labels layer pane after selecting the labels layer.")
         # self.rb_instance.setEnabled(False)
         # self.rb_instance.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_instance)
@@ -114,9 +135,16 @@ class SamWidget(QWidget):
         self.is_active = False
         self.layout().addWidget(self.btn_activate)
 
+        self.g_info_tooltip = QGroupBox("Tooltip Information")
+        self.l_info_tooltip = QVBoxLayout()
+        self.label_info_tooltip = QLabel("Every mode shows further information\n"
+                                         "when hovered over.")
+        self.l_info_tooltip.addWidget(self.label_info_tooltip)
+        self.g_info_tooltip.setLayout(self.l_info_tooltip)
+        self.layout().addWidget(self.g_info_tooltip)
+
         self.g_info_click = QGroupBox("Click Mode")
         self.l_info_click = QVBoxLayout()
-
         self.label_info_click = QLabel("Positive Click: Middle Mouse Button\n \n"
                                  "Negative Click: Control + Middle Mouse Button \n \n"
                                  "Undo: Control + Z \n \n"
@@ -126,41 +154,38 @@ class SamWidget(QWidget):
         self.g_info_click.setLayout(self.l_info_click)
         self.layout().addWidget(self.g_info_click)
 
-        self.g_info_everything = QGroupBox("Everything Mode")
-        self.l_info_everything = QVBoxLayout()
+        # self.g_info_everything = QGroupBox("Everything Mode")
+        # self.l_info_everything = QVBoxLayout()
+        # self.label_info_everything = QLabel("Creates automatically an instance segmentation \n"
+        #                                     "of the entire image.\n"
+        #                                     "No user interaction possible.")
+        # self.l_info_everything.addWidget(self.label_info_everything)
+        # self.g_info_everything.setLayout(self.l_info_everything)
+        # self.layout().addWidget(self.g_info_everything)
 
-        self.label_info_everything = QLabel("Creates automatically an instance segmentation \n"
-                                            "of the entire image.\n"
-                                            "No user interaction possible.")
-        self.l_info_everything.addWidget(self.label_info_everything)
-        self.g_info_everything.setLayout(self.l_info_everything)
-        self.layout().addWidget(self.g_info_everything)
+        # self.g_info_semantic = QGroupBox("Semantic Mode")
+        # self.l_info_semantic = QVBoxLayout()
+        # self.label_info_semantic = QLabel("Enables the user to create a \n"
+        #                          "multi-label (semantic) segmentation of different classes.\n \n"
+        #                          "All objects from the same class \n"
+        #                          "should be given the same label by the user.\n \n"
+        #                          "The current label can be changed by the user \n"
+        #                          "on the labels layer pane after selecting the labels layer.")
+        # self.l_info_semantic.addWidget(self.label_info_semantic)
+        # self.g_info_semantic.setLayout(self.l_info_semantic)
+        # self.layout().addWidget(self.g_info_semantic)
 
-        self.g_info_semantic = QGroupBox("Semantic Mode")
-        self.l_info_semantic = QVBoxLayout()
-
-        self.label_info_semantic = QLabel("Enables the user to create a \n"
-                                 "multi-label (semantic) segmentation of different classes.\n \n"
-                                 "All objects from the same class \n"
-                                 "should be given the same label by the user.\n \n"
-                                 "The current label can be changed by the user \n"
-                                 "on the labels layer pane after selecting the labels layer.")
-        self.l_info_semantic.addWidget(self.label_info_semantic)
-        self.g_info_semantic.setLayout(self.l_info_semantic)
-        self.layout().addWidget(self.g_info_semantic)
-
-        self.g_info_instance = QGroupBox("Instance Mode")
-        self.l_info_instance = QVBoxLayout()
-
-        self.label_info_instance = QLabel("Enables the user to create an \n"
-                                 "instance segmentation of different objects.\n \n"
-                                 "Objects can be from the same or different classes,\n"
-                                 "but each object should be given a unique label by the user. \n \n"
-                                 "The current label can be changed by the user \n"
-                                 "on the labels layer pane after selecting the labels layer.")
-        self.l_info_instance.addWidget(self.label_info_instance)
-        self.g_info_instance.setLayout(self.l_info_instance)
-        self.layout().addWidget(self.g_info_instance)
+        # self.g_info_instance = QGroupBox("Instance Mode")
+        # self.l_info_instance = QVBoxLayout()
+        # self.label_info_instance = QLabel("Enables the user to create an \n"
+        #                          "instance segmentation of different objects.\n \n"
+        #                          "Objects can be from the same or different classes,\n"
+        #                          "but each object should be given a unique label by the user. \n \n"
+        #                          "The current label can be changed by the user \n"
+        #                          "on the labels layer pane after selecting the labels layer.")
+        # self.l_info_instance.addWidget(self.label_info_instance)
+        # self.g_info_instance.setLayout(self.l_info_instance)
+        # self.layout().addWidget(self.g_info_instance)
 
         self.image_name = None
         self.image_layer = None
