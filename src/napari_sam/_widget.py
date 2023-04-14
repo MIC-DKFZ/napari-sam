@@ -409,7 +409,7 @@ class SamWidget(QWidget):
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
 
             elif self.annotator_mode == AnnotatorMode.AUTO:
-                image = self.image_layer.data
+                image = np.asarray(self.image_layer.data)
                 if not self.image_layer.rgb:
                     image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
                 image = image[..., :3]  # Remove a potential alpha channel
@@ -504,7 +504,7 @@ class SamWidget(QWidget):
         self.set_image()
 
     def set_image(self):
-        image = self.image_layer.data
+        image = np.asarray(self.image_layer.data)
         if self.image_layer.ndim == 2:
             if not self.image_layer.rgb:
                 image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
@@ -565,16 +565,17 @@ class SamWidget(QWidget):
             prediction = np.zeros_like(self.label_layer.data)
             predicted_slices = slice(None, None)
 
+        label_layer = np.asarray(self.label_layer.data)
         changed_indices = np.where(prediction == 1)
-        index_labels_old = self.label_layer.data[changed_indices]
-        self.label_layer.data[predicted_slices][self.label_layer.data[predicted_slices] == point_label] = 0
+        index_labels_old = label_layer[changed_indices]
+        label_layer[predicted_slices][label_layer[predicted_slices] == point_label] = 0
         if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
-            self.label_layer.data[prediction == 1] = point_label
+            label_layer[prediction == 1] = point_label
         else:
-            self.label_layer.data[(prediction == 1) & (self.label_layer.data == 0)] = point_label
-        index_labels_new = self.label_layer.data[changed_indices]
+            label_layer[(prediction == 1) & (label_layer == 0)] = point_label
+        index_labels_new = label_layer[changed_indices]
         self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
-        self.label_layer.data = self.label_layer.data
+        self.label_layer.data = label_layer
         self.old_points = copy.deepcopy(self.points_layer.data)
         # self.label_layer.refresh()
 
