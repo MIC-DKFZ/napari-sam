@@ -337,6 +337,7 @@ class SamWidget(QWidget):
         self._check_activate_btn()
 
     def _activate(self):
+        self.btn_activate.setEnabled(False)
         if not self.is_active:
             self.is_active = True
             self.btn_activate.setText("Deactivate")
@@ -419,6 +420,7 @@ class SamWidget(QWidget):
                 self.label_layer.data = prediction
         else:
             self._deactivate()
+        self.btn_activate.setEnabled(True)
 
     def _deactivate(self):
         self.is_active = False
