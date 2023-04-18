@@ -1,5 +1,6 @@
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea
 from qtpy import QtCore
+from qtpy.QtCore import Qt
 import napari
 import numpy as np
 from enum import Enum
@@ -37,35 +38,41 @@ class SamWidget(QWidget):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.setLayout(QVBoxLayout())
+        main_layout = QVBoxLayout()
+
+        # self.scroll_area = QScrollArea()
+        # self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # self.scroll_area.setWidgetResizable(True)
+
         self.layer_types = {"image": napari.layers.image.image.Image, "labels": napari.layers.labels.labels.Labels}
 
         l_model_type = QLabel("Select model type:")
-        self.layout().addWidget(l_model_type)
+        main_layout.addWidget(l_model_type)
 
         self.cb_model_type = QComboBox()
-        self.layout().addWidget(self.cb_model_type)
+        main_layout.addWidget(self.cb_model_type)
 
         self.btn_load_model = QPushButton("Load model")
         self.btn_load_model.clicked.connect(self._load_model)
-        self.layout().addWidget(self.btn_load_model)
+        main_layout.addWidget(self.btn_load_model)
         self.is_model_loaded = False
         self.init_model_type_combobox()
 
         l_image_layer = QLabel("Select input image layer:")
-        self.layout().addWidget(l_image_layer)
+        main_layout.addWidget(l_image_layer)
 
         self.cb_image_layers = QComboBox()
         self.cb_image_layers.addItems(self.get_layer_names("image"))
         self.cb_image_layers.currentTextChanged.connect(self.on_image_change)
-        self.layout().addWidget(self.cb_image_layers)
+        main_layout.addWidget(self.cb_image_layers)
 
         l_label_layer = QLabel("Select output labels layer:")
-        self.layout().addWidget(l_label_layer)
+        main_layout.addWidget(l_label_layer)
 
         self.cb_label_layers = QComboBox()
         self.cb_label_layers.addItems(self.get_layer_names("labels"))
-        self.layout().addWidget(self.cb_label_layers)
+        main_layout.addWidget(self.cb_label_layers)
 
         self.comboboxes = [{"combobox": self.cb_image_layers, "layer_type": "image"}, {"combobox": self.cb_label_layers, "layer_type": "labels"}]
 
@@ -98,7 +105,7 @@ class SamWidget(QWidget):
         self.rb_auto.clicked.connect(self.on_everything_mode_checked)
 
         self.g_annotation.setLayout(self.l_annotation)
-        self.layout().addWidget(self.g_annotation)
+        main_layout.addWidget(self.g_annotation)
 
         self.g_segmentation = QGroupBox("Segmentation mode")
         self.l_segmentation = QVBoxLayout()
@@ -127,75 +134,57 @@ class SamWidget(QWidget):
         self.l_segmentation.addWidget(self.rb_instance)
 
         self.g_segmentation.setLayout(self.l_segmentation)
-        self.layout().addWidget(self.g_segmentation)
+        main_layout.addWidget(self.g_segmentation)
 
         self.btn_activate = QPushButton("Activate")
         self.btn_activate.clicked.connect(self._activate)
         self.btn_activate.setEnabled(False)
         self.is_active = False
-        self.layout().addWidget(self.btn_activate)
+        main_layout.addWidget(self.btn_activate)
+
+        container_widget = QWidget()
+        container_layout = QVBoxLayout(container_widget)
 
         self.g_info_tooltip = QGroupBox("Tooltip Information")
         self.l_info_tooltip = QVBoxLayout()
-        self.label_info_tooltip = QLabel("Every mode shows further information\n"
-                                         "when hovered over.")
+        self.label_info_tooltip = QLabel("Every mode shows further information when hovered over.")
+        self.label_info_tooltip.setWordWrap(True)
         self.l_info_tooltip.addWidget(self.label_info_tooltip)
         self.g_info_tooltip.setLayout(self.l_info_tooltip)
-        self.layout().addWidget(self.g_info_tooltip)
+        container_layout.addWidget(self.g_info_tooltip)
 
         self.g_info_contrast = QGroupBox("Contrast Limits")
         self.l_info_contrast = QVBoxLayout()
-        self.label_info_contrast = QLabel("SAM computes its image embedding\n"
-                                       "based on the current image contrast.\n \n"
-                                       "Image contrast can be adjusted with the\n"
-                                       "contrast slider of the image layer.")
+        self.label_info_contrast = QLabel("SAM computes its image embedding based on the current image contrast.\n"
+                                          "Image contrast can be adjusted with the contrast slider of the image layer.")
+        self.label_info_contrast.setWordWrap(True)
         self.l_info_contrast.addWidget(self.label_info_contrast)
         self.g_info_contrast.setLayout(self.l_info_contrast)
-        self.layout().addWidget(self.g_info_contrast)
+        container_layout.addWidget(self.g_info_contrast)
 
         self.g_info_click = QGroupBox("Click Mode")
         self.l_info_click = QVBoxLayout()
         self.label_info_click = QLabel("Positive Click: Middle Mouse Button\n \n"
-                                 "Negative Click: Control + Middle Mouse Button \n \n"
-                                 "Undo: Control + Z \n \n"
-                                 "Select Point: Left Click \n \n"
-                                 "Delete Selected Point: Delete")
+                                 "Negative Click: Control + Middle Mouse Button\n \n"
+                                 "Undo: Control + Z\n \n"
+                                 "Select Point: Left Click\n \n"
+                                 "Delete Selected Point: Delete\n \n")
+        self.label_info_click.setWordWrap(True)
         self.l_info_click.addWidget(self.label_info_click)
         self.g_info_click.setLayout(self.l_info_click)
-        self.layout().addWidget(self.g_info_click)
+        container_layout.addWidget(self.g_info_click)
 
-        # self.g_info_everything = QGroupBox("Everything Mode")
-        # self.l_info_everything = QVBoxLayout()
-        # self.label_info_everything = QLabel("Creates automatically an instance segmentation \n"
-        #                                     "of the entire image.\n"
-        #                                     "No user interaction possible.")
-        # self.l_info_everything.addWidget(self.label_info_everything)
-        # self.g_info_everything.setLayout(self.l_info_everything)
-        # self.layout().addWidget(self.g_info_everything)
+        scroll_area = QScrollArea()
+        # scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(container_widget)
 
-        # self.g_info_semantic = QGroupBox("Semantic Mode")
-        # self.l_info_semantic = QVBoxLayout()
-        # self.label_info_semantic = QLabel("Enables the user to create a \n"
-        #                          "multi-label (semantic) segmentation of different classes.\n \n"
-        #                          "All objects from the same class \n"
-        #                          "should be given the same label by the user.\n \n"
-        #                          "The current label can be changed by the user \n"
-        #                          "on the labels layer pane after selecting the labels layer.")
-        # self.l_info_semantic.addWidget(self.label_info_semantic)
-        # self.g_info_semantic.setLayout(self.l_info_semantic)
-        # self.layout().addWidget(self.g_info_semantic)
+        # Set the scrollbar policies for the scroll area
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
-        # self.g_info_instance = QGroupBox("Instance Mode")
-        # self.l_info_instance = QVBoxLayout()
-        # self.label_info_instance = QLabel("Enables the user to create an \n"
-        #                          "instance segmentation of different objects.\n \n"
-        #                          "Objects can be from the same or different classes,\n"
-        #                          "but each object should be given a unique label by the user. \n \n"
-        #                          "The current label can be changed by the user \n"
-        #                          "on the labels layer pane after selecting the labels layer.")
-        # self.l_info_instance.addWidget(self.label_info_instance)
-        # self.g_info_instance.setLayout(self.l_info_instance)
-        # self.layout().addWidget(self.g_info_instance)
+        main_layout.addWidget(scroll_area)
+
+        self.setLayout(main_layout)
 
         self.image_name = None
         self.image_layer = None
