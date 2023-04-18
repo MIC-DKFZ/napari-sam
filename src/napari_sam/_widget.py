@@ -506,8 +506,8 @@ class SamWidget(QWidget):
         self.set_image()
 
     def set_image(self):
-        image = np.asarray(self.image_layer.data)
         if self.image_layer.ndim == 2:
+            image = np.asarray(self.image_layer.data)
             if not self.image_layer.rgb:
                 image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
             image = image[..., :3]  # Remove a potential alpha channel
@@ -517,17 +517,18 @@ class SamWidget(QWidget):
             l_creating_features= QLabel("Creating SAM image embedding:")
             self.layout().addWidget(l_creating_features)
             progress_bar = QProgressBar(self)
-            progress_bar.setMaximum(image.shape[0])
+            progress_bar.setMaximum(self.image_layer.data.shape[0])
             progress_bar.setValue(0)
             self.layout().addWidget(progress_bar)
-            if not self.image_layer.rgb:
-                image = np.stack((image,) * 3, axis=-1)  # Expand to 3-channel image
-            image = image[..., :3]  # Remove a potential alpha channel
-            contrast_limits = self.image_layer.contrast_limits
-            image = normalize(image, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
             self.sam_features = []
-            for index in tqdm(range(image.shape[0]), desc="Creating SAM image embedding"):
-                self.sam_predictor.set_image(image[index, :, :, :])
+            for index in tqdm(range(self.image_layer.data.shape[0]), desc="Creating SAM image embedding"):
+                image_slice = np.asarray(self.image_layer.data[index, ...])
+                if not self.image_layer.rgb:
+                    image_slice = np.stack((image_slice,) * 3, axis=-1)  # Expand to 3-channel image
+                image_slice = image_slice[..., :3]  # Remove a potential alpha channel
+                contrast_limits = self.image_layer.contrast_limits
+                image_slice = normalize(image_slice, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
+                self.sam_predictor.set_image(image_slice)
                 self.sam_features.append(self.sam_predictor.features)
                 progress_bar.setValue(index+1)
                 QApplication.processEvents()
@@ -613,20 +614,6 @@ class SamWidget(QWidget):
             prediction_yz = prediction_yz[0]
             prediction[x_coord, :, :] = prediction_yz
             predicted_slices = x_coord
-
-            # for x_coord, group_points in groups.items():
-            #     group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-            #     group_points = [point[1:] for point in group_points]
-            #     self.sam_predictor.features = self.sam_features[x_coord]
-            #     prediction_yz, _, _ = self.sam_predictor.predict(
-            #         point_coords=np.flip(group_points, axis=-1),
-            #         point_labels=np.asarray(group_labels),
-            #         mask_input=self.sam_logits,
-            #         multimask_output=False,
-            #     )
-            #     prediction_yz = prediction_yz[0]
-            #     prediction[x_coord, :, :] = prediction_yz
-            sam_logits = None  # TODO: Use sam_logits
         # elif self.image_layer.ndim == 3:
         #     z_coords = np.unique(points[:, 2])
         #     groups = {x_coord: list(points[points[:, 2] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
