@@ -7,7 +7,7 @@ import numpy as np
 viewer = Viewer()
 viewer.window.add_dock_widget(SamWidget(viewer))
 
-image = sitk.GetArrayFromImage(sitk.ReadImage("C:/Users/Cookie/Downloads/img.nii.gz"))
+image = sitk.GetArrayFromImage(sitk.ReadImage("/home/k539i/Downloads/A2E3W4_0000_0000.nii.gz"))
 # image = image[:10, :, :]
 image = np.array(image)
 layer_1 = viewer.add_image(image)

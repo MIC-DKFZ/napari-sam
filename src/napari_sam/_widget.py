@@ -143,6 +143,16 @@ class SamWidget(QWidget):
         self.g_info_tooltip.setLayout(self.l_info_tooltip)
         self.layout().addWidget(self.g_info_tooltip)
 
+        self.g_info_contrast = QGroupBox("Contrast Limits")
+        self.l_info_contrast = QVBoxLayout()
+        self.label_info_contrast = QLabel("SAM computes its image embedding\n"
+                                       "based on the current image contrast.\n \n"
+                                       "Image contrast can be adjusted with the\n"
+                                       "contrast slider of the image layer.")
+        self.l_info_contrast.addWidget(self.label_info_contrast)
+        self.g_info_contrast.setLayout(self.l_info_contrast)
+        self.layout().addWidget(self.g_info_contrast)
+
         self.g_info_click = QGroupBox("Click Mode")
         self.l_info_click = QVBoxLayout()
         self.label_info_click = QLabel("Positive Click: Middle Mouse Button\n \n"
@@ -399,7 +409,10 @@ class SamWidget(QWidget):
                 self._reset_history()
 
                 if self.image_layer.ndim == 3:
-                    self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
+                    # self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
+                    # self.image_layer._qt_controls.contrast_limits_slider.slider.sliderReleased.connect(self.on_contrast_limits_change)
+                    # self.image_layer._qt_controls['contrast_limits'].slider.sliderReleased.connect(self.on_contrast_limits_change)
+                    pass
 
                 self.set_image()
                 self.update_points_layer(None)
