@@ -409,7 +409,10 @@ class SamWidget(QWidget):
                 self._reset_history()
 
                 if self.image_layer.ndim == 3:
-                    self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
+                    # self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
+                    # self.image_layer._qt_controls.contrast_limits_slider.slider.sliderReleased.connect(self.on_contrast_limits_change)
+                    # self.image_layer._qt_controls['contrast_limits'].slider.sliderReleased.connect(self.on_contrast_limits_change)
+                    pass
 
                 self.set_image()
                 self.update_points_layer(None)
