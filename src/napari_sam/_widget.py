@@ -356,15 +356,16 @@ class SamWidget(QWidget):
             self.btn_activate.setText("Activate")
 
     def on_image_change(self):
-        image_name = self.cb_image_layers.currentText()
-        if image_name != "" and self.viewer.layers[image_name].ndim > 2:
-            self.rb_auto.setEnabled(False)
-            self.rb_auto.setChecked(False)
-            self.rb_click.setChecked(True)
-            self.rb_auto.setStyleSheet("color: gray")
-        else:
-            self.rb_auto.setEnabled(True)
-            self.rb_auto.setStyleSheet("")
+        # image_name = self.cb_image_layers.currentText()
+        # if image_name != "" and self.viewer.layers[image_name].ndim > 2:
+        #     self.rb_auto.setEnabled(False)
+        #     self.rb_auto.setChecked(False)
+        #     self.rb_click.setChecked(True)
+        #     self.rb_auto.setStyleSheet("color: gray")
+        # else:
+        #     self.rb_auto.setEnabled(True)
+        #     self.rb_auto.setStyleSheet("")
+        pass
 
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
@@ -563,13 +564,7 @@ class SamWidget(QWidget):
                                                                         crop_n_points_downscale_factor=int(self.le_crop_n_points_downscale_factor.text()),
                                                                         min_mask_region_area=int(self.le_min_mask_region_area.text()),
                                                                         )
-                image = np.asarray(self.image_layer.data)
-                if not self.image_layer.rgb:
-                    image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
-                image = image[..., :3]  # Remove a potential alpha channel
-                records = self.sam_anything_predictor.generate(image)
-                masks = np.asarray([record["segmentation"] for record in records])
-                prediction = np.argmax(masks, axis=0)
+                prediction = self.predict_everything()
                 self.label_layer.data = prediction
         else:
             self._deactivate()
@@ -640,7 +635,24 @@ class SamWidget(QWidget):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
             self.points_layer.data = np.delete(self.points_layer.data, selected_points[0], axis=0)
-            self.on_points_changed(None)
+            self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
+            deleted_point, _ = self.find_changed_point(self.old_points, self.points_layer.data)
+            label = self.find_point_label(deleted_point)
+            index_to_remove = np.where((self.points[label] == deleted_point).all(axis=1))[0]
+            self.points[label] = np.delete(self.points[label], index_to_remove, axis=0).tolist()
+            if len(self.points[label]) == 0:
+                del self.points[label]
+            self.point_label = label
+            if self.image_layer.ndim == 2:
+                self.sam_logits = None
+            elif self.image_layer.ndim == 3:
+                self.sam_logits[deleted_point[0]] = None
+            else:
+                raise RuntimeError("Point deletion not implemented for this dimensionality.")
+            self.run(self.points, self.point_label, deleted_point, label)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
     def on_undo(self, layer):
         """Undo the last paint or fill action since the view slice has changed."""
@@ -691,6 +703,12 @@ class SamWidget(QWidget):
             raise RuntimeError("Only 2D and 3D images are supported.")
 
     def do_click(self, coords, is_positive):
+        # Check if there is already a point at these coordinates
+        for label, points in self.points.items():
+            if np.any((coords == points).all(1)):
+                warnings.warn("There is already a point in this location. This click will be ignored.")
+                return
+
         self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
 
         self.point_label = self.label_layer.selected_label
@@ -699,12 +717,12 @@ class SamWidget(QWidget):
 
         self.points[self.point_label].append(coords)
 
-        self.run(self.points, self.point_label)
+        self.run(self.points, self.point_label, coords, self.point_label)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
             self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
-    def run(self, points, point_label):
+    def run(self, points, point_label, current_point, current_label):
         self.update_points_layer(points)
 
         if points:
@@ -716,7 +734,7 @@ class SamWidget(QWidget):
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
 
-            prediction, predicted_slices = self.predict(points_flattened, labels_flattended)
+            prediction, predicted_slices = self.predict_click(points_flattened, labels_flattended, current_point, current_label)
         else:
             prediction = np.zeros_like(self.label_layer.data)
             predicted_slices = slice(None, None)
@@ -736,10 +754,9 @@ class SamWidget(QWidget):
             self.old_points = copy.deepcopy(self.points_layer.data)
             # self.label_layer.refresh()
 
-    def predict(self, points, labels):
+    def predict_click(self, points, labels, current_point, current_label):
         points = np.asarray(points)
-        old_point, new_point = self.find_changed_point(np.asarray(self.old_points), points)
-        if new_point is not None:
+        if current_point is not None:
             if self.image_layer.ndim == 2:
                 self.sam_predictor.features = self.sam_features
                 prediction, _, self.sam_logits = self.sam_predictor.predict(
@@ -753,7 +770,7 @@ class SamWidget(QWidget):
             elif self.image_layer.ndim == 3:
                 x_coords = np.unique(points[:, 0])
                 groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
-                x_coord = new_point[0]
+                x_coord = current_point[0]
                 prediction = np.zeros_like(self.label_layer.data)
 
                 group_points = groups[x_coord]
@@ -822,6 +839,45 @@ class SamWidget(QWidget):
             predicted_slices = None
         return prediction, predicted_slices
 
+    def predict_everything(self):
+        if self.image_layer.ndim == 2:
+            image = np.asarray(self.image_layer.data)
+            if not self.image_layer.rgb:
+                image = np.stack((image,) * 3, axis=-1)  # Expand to 3-channel image
+            image = image[..., :3]  # Remove a potential alpha channel
+            records = self.sam_anything_predictor.generate(image)
+            masks = np.asarray([record["segmentation"] for record in records])
+            prediction = np.argmax(masks, axis=0)
+        elif self.image_layer.ndim == 3:
+            l_creating_features= QLabel("Predicting everything:")
+            self.layout().addWidget(l_creating_features)
+            progress_bar = QProgressBar(self)
+            progress_bar.setMaximum(self.image_layer.data.shape[0])
+            progress_bar.setValue(0)
+            self.layout().addWidget(progress_bar)
+            prediction = []
+            for index in tqdm(range(self.image_layer.data.shape[0]), desc="Predicting everything"):
+                image_slice = np.asarray(self.image_layer.data[index, ...])
+                if not self.image_layer.rgb:
+                    image_slice = np.stack((image_slice,) * 3, axis=-1)  # Expand to 3-channel image
+                image_slice = image_slice[..., :3]  # Remove a potential alpha channel
+                contrast_limits = self.image_layer.contrast_limits
+                image_slice = normalize(image_slice, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
+                records_slice = self.sam_anything_predictor.generate(image_slice)
+                masks_slice = np.asarray([record["segmentation"] for record in records_slice])
+                prediction_slice = np.argmax(masks_slice, axis=0)
+                prediction.append(prediction_slice)
+                progress_bar.setValue(index+1)
+                QApplication.processEvents()
+                progress_bar.deleteLater()
+                l_creating_features.deleteLater()
+            prediction = np.asarray(prediction)
+            # TODO: Postprocess prediction
+        else:
+            raise RuntimeError("Only 2D and 3D images are supported.")
+        return prediction
+
+
     def update_points_layer(self, points):
         selected_layer = None
         if self.viewer.layers.selection.active != self.points_layer:
@@ -850,23 +906,6 @@ class SamWidget(QWidget):
             self.viewer.layers.selection.active = selected_layer
         self.points_layer.refresh()
 
-    def on_points_changed(self, event):
-        self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
-        old_point, new_point = self.find_changed_point(self.old_points, self.points_layer.data)
-        label = self.find_point_label(old_point)
-        index_to_remove = np.where((self.points[label] == old_point).all(axis=1))[0]
-        self.points[label] = np.delete(self.points[label], index_to_remove, axis=0).tolist()
-        if len(self.points[label]) == 0:
-            del self.points[label]
-        if new_point is not None:
-            self.points[label].append(new_point)
-        self.point_label = label
-        self.sam_logits = None
-        self.run(self.points, self.point_label)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=FutureWarning)
-            self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
-
     def find_changed_point(self, old_points, new_points):
         if len(new_points) == 0:
             old_point = old_points
@@ -877,20 +916,17 @@ class SamWidget(QWidget):
         else:
             new_point = np.array([x for x in new_points if not np.any((x == old_points).all(1))])
 
-        # if (len(old_point) != 0 and len(old_point) != 1) or (len(new_point) != 0 and len(new_point) != 1):
-        #     raise RuntimeError("Could not identify a changed point.")
-
         if len(old_point) == 0:
-            old_point = None
+            deleted_point = None
         else:
-            old_point = old_point[0]
+            deleted_point = old_point[0]
 
         if len(new_point) == 0:
             new_point = None
         else:
             new_point = new_point[0]
 
-        return old_point, new_point
+        return deleted_point, new_point
 
     def find_point_label(self, point):
         for label, label_points in self.points.items():
