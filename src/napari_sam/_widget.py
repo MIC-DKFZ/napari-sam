@@ -1,4 +1,6 @@
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QSpacerItem, QSizePolicy
+from qtpy.QtGui import QIntValidator, QDoubleValidator
+from napari_sam.QCollapsibleBox import QCollapsibleBox
 from qtpy import QtCore
 from qtpy.QtCore import Qt
 import napari
@@ -142,8 +144,8 @@ class SamWidget(QWidget):
         self.is_active = False
         main_layout.addWidget(self.btn_activate)
 
-        container_widget = QWidget()
-        container_layout = QVBoxLayout(container_widget)
+        container_widget_info = QWidget()
+        container_layout_info = QVBoxLayout(container_widget_info)
 
         self.g_info_tooltip = QGroupBox("Tooltip Information")
         self.l_info_tooltip = QVBoxLayout()
@@ -151,7 +153,7 @@ class SamWidget(QWidget):
         self.label_info_tooltip.setWordWrap(True)
         self.l_info_tooltip.addWidget(self.label_info_tooltip)
         self.g_info_tooltip.setLayout(self.l_info_tooltip)
-        container_layout.addWidget(self.g_info_tooltip)
+        container_layout_info.addWidget(self.g_info_tooltip)
 
         self.g_info_contrast = QGroupBox("Contrast Limits")
         self.l_info_contrast = QVBoxLayout()
@@ -160,7 +162,7 @@ class SamWidget(QWidget):
         self.label_info_contrast.setWordWrap(True)
         self.l_info_contrast.addWidget(self.label_info_contrast)
         self.g_info_contrast.setLayout(self.l_info_contrast)
-        container_layout.addWidget(self.g_info_contrast)
+        container_layout_info.addWidget(self.g_info_contrast)
 
         self.g_info_click = QGroupBox("Click Mode")
         self.l_info_click = QVBoxLayout()
@@ -172,17 +174,15 @@ class SamWidget(QWidget):
         self.label_info_click.setWordWrap(True)
         self.l_info_click.addWidget(self.label_info_click)
         self.g_info_click.setLayout(self.l_info_click)
-        container_layout.addWidget(self.g_info_click)
+        container_layout_info.addWidget(self.g_info_click)
 
-        scroll_area = QScrollArea()
-        # scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(container_widget)
+        scroll_area_info = QScrollArea()
+        scroll_area_info.setWidget(container_widget_info)
+        scroll_area_info.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        main_layout.addWidget(scroll_area_info)
 
-        # Set the scrollbar policies for the scroll area
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-
-        main_layout.addWidget(scroll_area)
+        self.scroll_area_auto = self.init_auto_mode_settings()
+        main_layout.addWidget(self.scroll_area_auto)
 
         self.setLayout(main_layout)
 
@@ -208,15 +208,146 @@ class SamWidget(QWidget):
 
         self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
+    def init_auto_mode_settings(self):
+        container_widget_auto = QWidget()
+        container_layout_auto = QVBoxLayout(container_widget_auto)
+
+        # self.g_auto_mode_settings = QCollapsibleBox("Everything Mode Settings")
+        self.g_auto_mode_settings = QGroupBox("Everything Mode Settings")
+        self.l_auto_mode_settings = QVBoxLayout()
+
+        l_points_per_side = QLabel("Points per side:")
+        self.l_auto_mode_settings.addWidget(l_points_per_side)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_points_per_side = QLineEdit()
+        self.le_points_per_side.setText("32")
+        self.le_points_per_side.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_points_per_side)
+
+        l_points_per_batch = QLabel("Points per batch:")
+        self.l_auto_mode_settings.addWidget(l_points_per_batch)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_points_per_batch = QLineEdit()
+        self.le_points_per_batch.setText("64")
+        self.le_points_per_batch.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_points_per_batch)
+
+        l_pred_iou_thresh = QLabel("Prediction IoU threshold:")
+        self.l_auto_mode_settings.addWidget(l_pred_iou_thresh)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_pred_iou_thresh = QLineEdit()
+        self.le_pred_iou_thresh.setText("0.88")
+        self.le_pred_iou_thresh.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_pred_iou_thresh)
+
+        l_stability_score_thresh = QLabel("Stability score threshold:")
+        self.l_auto_mode_settings.addWidget(l_stability_score_thresh)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_stability_score_thresh = QLineEdit()
+        self.le_stability_score_thresh.setText("0.95")
+        self.le_stability_score_thresh.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_stability_score_thresh)
+
+        l_stability_score_offset = QLabel("Stability score offset:")
+        self.l_auto_mode_settings.addWidget(l_stability_score_offset)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_stability_score_offset = QLineEdit()
+        self.le_stability_score_offset.setText("1.0")
+        self.le_stability_score_offset.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_stability_score_offset)
+
+        l_box_nms_thresh = QLabel("Box NMS threshold:")
+        self.l_auto_mode_settings.addWidget(l_box_nms_thresh)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_box_nms_thresh = QLineEdit()
+        self.le_box_nms_thresh.setText("0.7")
+        self.le_box_nms_thresh.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_box_nms_thresh)
+
+        l_crop_n_layers = QLabel("Crop N layers")
+        self.l_auto_mode_settings.addWidget(l_crop_n_layers)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_crop_n_layers = QLineEdit()
+        self.le_crop_n_layers.setText("0")
+        self.le_crop_n_layers.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_crop_n_layers)
+
+        l_crop_nms_thresh = QLabel("Crop NMS threshold:")
+        self.l_auto_mode_settings.addWidget(l_crop_nms_thresh)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_crop_nms_thresh = QLineEdit()
+        self.le_crop_nms_thresh.setText("0.7")
+        self.le_crop_nms_thresh.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_crop_nms_thresh)
+
+        l_crop_overlap_ratio = QLabel("Crop overlap ratio:")
+        self.l_auto_mode_settings.addWidget(l_crop_overlap_ratio)
+        validator = QDoubleValidator()
+        validator.setRange(0.0, 1.0)
+        validator.setDecimals(5)
+        self.le_crop_overlap_ratio = QLineEdit()
+        self.le_crop_overlap_ratio.setText("0.3413")
+        self.le_crop_overlap_ratio.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_crop_overlap_ratio)
+
+        l_crop_n_points_downscale_factor = QLabel("Crop N points downscale factor")
+        self.l_auto_mode_settings.addWidget(l_crop_n_points_downscale_factor)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_crop_n_points_downscale_factor = QLineEdit()
+        self.le_crop_n_points_downscale_factor.setText("1")
+        self.le_crop_n_points_downscale_factor.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_crop_n_points_downscale_factor)
+
+        l_min_mask_region_area = QLabel("Min mask region area")
+        self.l_auto_mode_settings.addWidget(l_min_mask_region_area)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_min_mask_region_area = QLineEdit()
+        self.le_min_mask_region_area.setText("0")
+        self.le_min_mask_region_area.setValidator(validator)
+        self.l_auto_mode_settings.addWidget(self.le_min_mask_region_area)
+
+        # self.g_auto_mode_settings.setContentLayout(self.l_auto_mode_settings)
+        self.g_auto_mode_settings.setLayout(self.l_auto_mode_settings)
+        # main_layout.addWidget(self.g_auto_mode_settings)
+        container_layout_auto.addWidget(self.g_auto_mode_settings)
+
+        scroll_area_auto = QScrollArea()
+        # scroll_area_info.setWidgetResizable(True)
+        scroll_area_auto.setWidget(container_widget_auto)
+        # Set the scrollbar policies for the scroll area
+        scroll_area_auto.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # scroll_area_info.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll_area_auto.hide()
+        return scroll_area_auto
+
     def on_everything_mode_checked(self):
         if self.rb_auto.isChecked():
             self.rb_semantic.setEnabled(False)
             self.rb_semantic.setChecked(False)
             self.rb_semantic.setStyleSheet("color: gray")
             self.rb_instance.setChecked(True)
+            self.scroll_area_auto.show()
+            self.btn_activate.setText("Run")
         else:
             self.rb_semantic.setEnabled(True)
             self.rb_semantic.setStyleSheet("")
+            self.scroll_area_auto.hide()
+            self.btn_activate.setText("Activate")
 
     def on_image_change(self):
         image_name = self.cb_image_layers.currentText()
@@ -331,19 +462,12 @@ class SamWidget(QWidget):
         )
         self.sam_model.to(self.device)
         self.sam_predictor = SamPredictor(self.sam_model)
-        self.sam_anything_predictor = SamAutomaticMaskGenerator(self.sam_model)
         self.is_model_loaded = True
         self._check_activate_btn()
 
     def _activate(self):
         self.btn_activate.setEnabled(False)
         if not self.is_active:
-            self.is_active = True
-            self.btn_activate.setText("Deactivate")
-            self.btn_load_model.setEnabled(False)
-            self.cb_model_type.setEnabled(False)
-            self.cb_image_layers.setEnabled(False)
-            self.cb_label_layers.setEnabled(False)
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
@@ -377,6 +501,14 @@ class SamWidget(QWidget):
                 self.rb_bbox.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Annotator mode not implemented.")
+
+            if self.annotator_mode != AnnotatorMode.AUTO:
+                self.is_active = True
+                self.btn_activate.setText("Deactivate")
+                self.btn_load_model.setEnabled(False)
+                self.cb_model_type.setEnabled(False)
+                self.cb_image_layers.setEnabled(False)
+                self.cb_label_layers.setEnabled(False)
 
             if self.rb_semantic.isChecked():
                 self.segmentation_mode = SegmentationMode.SEMANTIC
@@ -412,6 +544,19 @@ class SamWidget(QWidget):
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
 
             elif self.annotator_mode == AnnotatorMode.AUTO:
+                self.sam_anything_predictor = SamAutomaticMaskGenerator(self.sam_model,
+                                                                        points_per_side=int(self.le_points_per_side.text()),
+                                                                        points_per_batch=int(self.le_points_per_batch.text()),
+                                                                        pred_iou_thresh=float(self.le_pred_iou_thresh.text()),
+                                                                        stability_score_thresh=float(self.le_stability_score_thresh.text()),
+                                                                        stability_score_offset=float(self.le_stability_score_offset.text()),
+                                                                        box_nms_thresh=float(self.le_box_nms_thresh.text()),
+                                                                        crop_n_layers=int(self.le_crop_n_layers.text()),
+                                                                        crop_nms_thresh=float(self.le_crop_nms_thresh.text()),
+                                                                        crop_overlap_ratio=float(self.le_crop_overlap_ratio.text()),
+                                                                        crop_n_points_downscale_factor=int(self.le_crop_n_points_downscale_factor.text()),
+                                                                        min_mask_region_area=int(self.le_min_mask_region_area.text()),
+                                                                        )
                 image = np.asarray(self.image_layer.data)
                 if not self.image_layer.rgb:
                     image = np.stack((image,)*3, axis=-1)  # Expand to 3-channel image
