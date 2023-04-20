@@ -36,7 +36,13 @@ class SamWidget(QWidget):
         self.annotator_mode = AnnotatorMode.NONE
         self.segmentation_mode = SegmentationMode.SEMANTIC
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if not torch.cuda.is_available():
+            if not torch.backends.mps.is_available():
+                self.device = "cpu"
+            else:
+                self.device = "mps"
+        else:
+            self.device = "cuda"
 
         main_layout = QVBoxLayout()
 
