@@ -721,99 +721,105 @@ class SamWidget(QWidget):
             prediction = np.zeros_like(self.label_layer.data)
             predicted_slices = slice(None, None)
 
-        label_layer = np.asarray(self.label_layer.data)
-        changed_indices = np.where(prediction == 1)
-        index_labels_old = label_layer[changed_indices]
-        label_layer[predicted_slices][label_layer[predicted_slices] == point_label] = 0
-        if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
-            label_layer[prediction == 1] = point_label
-        else:
-            label_layer[(prediction == 1) & (label_layer == 0)] = point_label
-        index_labels_new = label_layer[changed_indices]
-        self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
-        self.label_layer.data = label_layer
-        self.old_points = copy.deepcopy(self.points_layer.data)
-        # self.label_layer.refresh()
+        if prediction is not None:
+            label_layer = np.asarray(self.label_layer.data)
+            changed_indices = np.where(prediction == 1)
+            index_labels_old = label_layer[changed_indices]
+            label_layer[predicted_slices][label_layer[predicted_slices] == point_label] = 0
+            if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
+                label_layer[prediction == 1] = point_label
+            else:
+                label_layer[(prediction == 1) & (label_layer == 0)] = point_label
+            index_labels_new = label_layer[changed_indices]
+            self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
+            self.label_layer.data = label_layer
+            self.old_points = copy.deepcopy(self.points_layer.data)
+            # self.label_layer.refresh()
 
     def predict(self, points, labels):
         points = np.asarray(points)
         old_point, new_point = self.find_changed_point(np.asarray(self.old_points), points)
-        if self.image_layer.ndim == 2:
-            self.sam_predictor.features = self.sam_features
-            prediction, _, self.sam_logits = self.sam_predictor.predict(
-                point_coords=np.flip(points, axis=-1),
-                point_labels=np.asarray(labels),
-                mask_input=self.sam_logits,
-                multimask_output=False,
-            )
-            prediction = prediction[0]
-            predicted_slices = None
-        elif self.image_layer.ndim == 3:
-            x_coords = np.unique(points[:, 0])
-            groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
-            x_coord = new_point[0]
-            prediction = np.zeros_like(self.label_layer.data)
+        if new_point is not None:
+            if self.image_layer.ndim == 2:
+                self.sam_predictor.features = self.sam_features
+                prediction, _, self.sam_logits = self.sam_predictor.predict(
+                    point_coords=np.flip(points, axis=-1),
+                    point_labels=np.asarray(labels),
+                    mask_input=self.sam_logits,
+                    multimask_output=False,
+                )
+                prediction = prediction[0]
+                predicted_slices = None
+            elif self.image_layer.ndim == 3:
+                x_coords = np.unique(points[:, 0])
+                groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+                x_coord = new_point[0]
+                prediction = np.zeros_like(self.label_layer.data)
 
-            group_points = groups[x_coord]
-            group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-            group_points = [point[1:] for point in group_points]
-            self.sam_predictor.features = self.sam_features[x_coord]
-            prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
-                point_coords=np.flip(group_points, axis=-1),
-                point_labels=np.asarray(group_labels),
-                mask_input=self.sam_logits[x_coord],
-                multimask_output=False,
-            )
-            prediction_yz = prediction_yz[0]
-            prediction[x_coord, :, :] = prediction_yz
-            predicted_slices = x_coord
-        # elif self.image_layer.ndim == 3:
-        #     z_coords = np.unique(points[:, 2])
-        #     groups = {x_coord: list(points[points[:, 2] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
-        #     image_point_proposals, image_label_proposals = [], []
-        #
-        #     for x_coord, group_points in groups.items():
-        #         group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-        #         group_points = [point[:2] for point in group_points]
-        #         self.sam_predictor.features = self.sam_features[x_coord - 1]
-        #         prediction_yz, _, _ = self.sam_predictor.predict(
-        #             point_coords=np.flip(group_points, axis=-1),
-        #             point_labels=np.asarray(group_labels),
-        #             mask_input=self.sam_logits,
-        #             multimask_output=False,
-        #         )
-        #         prediction_yz = prediction_yz[0]
-        #
-        #         for i, point in enumerate(group_points):
-        #             y_coord = point[1]
-        #             prediction_x = prediction_yz[:, y_coord]
-        #             point_proposals_x = np.asarray(list(zip(*np.where(prediction_x)))).flatten()
-        #             point_proposals = [(point_proposal_x, y_coord, x_coord) for point_proposal_x in point_proposals_x]
-        #             image_point_proposals.extend(point_proposals)
-        #             image_label_proposals.extend([group_labels[i]] * len(point_proposals))
-        #
-        #     image_point_proposals = np.asarray(image_point_proposals)
-        #     image_label_proposals = np.asarray(image_label_proposals)
-        #     z_coords = np.unique(image_point_proposals[:, 0])
-        #     groups = {x_coord: list(image_point_proposals[image_point_proposals[:, 0] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
-        #
-        #     prediction = np.zeros_like(self.label_layer.data)
-        #     for x_coord, group_points in groups.items():
-        #         group_labels = [image_label_proposals[np.argwhere(np.all(image_point_proposals == point, axis=1)).flatten()[0]] for point in group_points]
-        #         group_points = [point[1:] for point in group_points]
-        #         self.sam_predictor.features = self.sam_features[x_coord - 1]
-        #         prediction_yz, _, _ = self.sam_predictor.predict(
-        #             point_coords=np.flip(group_points, axis=-1),
-        #             point_labels=np.asarray(group_labels),
-        #             mask_input=self.sam_logits,
-        #             multimask_output=False,
-        #         )
-        #         prediction_yz = prediction_yz[0]
-        #         prediction[x_coord, :, :] = prediction_yz  # prediction_yz is 2D
-        #     print("")
-        #     sam_logits = None  # TODO: Use sam_logits
+                group_points = groups[x_coord]
+                group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+                group_points = [point[1:] for point in group_points]
+                self.sam_predictor.features = self.sam_features[x_coord]
+                prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
+                    point_coords=np.flip(group_points, axis=-1),
+                    point_labels=np.asarray(group_labels),
+                    mask_input=self.sam_logits[x_coord],
+                    multimask_output=False,
+                )
+                prediction_yz = prediction_yz[0]
+                prediction[x_coord, :, :] = prediction_yz
+                predicted_slices = x_coord
+            # elif self.image_layer.ndim == 3:
+            #     z_coords = np.unique(points[:, 2])
+            #     groups = {x_coord: list(points[points[:, 2] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
+            #     image_point_proposals, image_label_proposals = [], []
+            #
+            #     for x_coord, group_points in groups.items():
+            #         group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+            #         group_points = [point[:2] for point in group_points]
+            #         self.sam_predictor.features = self.sam_features[x_coord - 1]
+            #         prediction_yz, _, _ = self.sam_predictor.predict(
+            #             point_coords=np.flip(group_points, axis=-1),
+            #             point_labels=np.asarray(group_labels),
+            #             mask_input=self.sam_logits,
+            #             multimask_output=False,
+            #         )
+            #         prediction_yz = prediction_yz[0]
+            #
+            #         for i, point in enumerate(group_points):
+            #             y_coord = point[1]
+            #             prediction_x = prediction_yz[:, y_coord]
+            #             point_proposals_x = np.asarray(list(zip(*np.where(prediction_x)))).flatten()
+            #             point_proposals = [(point_proposal_x, y_coord, x_coord) for point_proposal_x in point_proposals_x]
+            #             image_point_proposals.extend(point_proposals)
+            #             image_label_proposals.extend([group_labels[i]] * len(point_proposals))
+            #
+            #     image_point_proposals = np.asarray(image_point_proposals)
+            #     image_label_proposals = np.asarray(image_label_proposals)
+            #     z_coords = np.unique(image_point_proposals[:, 0])
+            #     groups = {x_coord: list(image_point_proposals[image_point_proposals[:, 0] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
+            #
+            #     prediction = np.zeros_like(self.label_layer.data)
+            #     for x_coord, group_points in groups.items():
+            #         group_labels = [image_label_proposals[np.argwhere(np.all(image_point_proposals == point, axis=1)).flatten()[0]] for point in group_points]
+            #         group_points = [point[1:] for point in group_points]
+            #         self.sam_predictor.features = self.sam_features[x_coord - 1]
+            #         prediction_yz, _, _ = self.sam_predictor.predict(
+            #             point_coords=np.flip(group_points, axis=-1),
+            #             point_labels=np.asarray(group_labels),
+            #             mask_input=self.sam_logits,
+            #             multimask_output=False,
+            #         )
+            #         prediction_yz = prediction_yz[0]
+            #         prediction[x_coord, :, :] = prediction_yz  # prediction_yz is 2D
+            #     print("")
+            #     sam_logits = None  # TODO: Use sam_logits
+            else:
+                raise RuntimeError("Only 2D and 3D images are supported.")
         else:
-            raise RuntimeError("Only 2D and 3D images are supported.")
+            warnings.warn("Could not identify click position.")
+            prediction = None
+            predicted_slices = None
         return prediction, predicted_slices
 
     def update_points_layer(self, points):
