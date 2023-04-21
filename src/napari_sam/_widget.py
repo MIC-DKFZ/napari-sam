@@ -872,11 +872,37 @@ class SamWidget(QWidget):
                 progress_bar.deleteLater()
                 l_creating_features.deleteLater()
             prediction = np.asarray(prediction)
-            # TODO: Postprocess prediction
+            prediction = self.merge_classes_over_slices(prediction)
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
         return prediction
 
+    def merge_classes_over_slices(self, prediction, threshold=0.5):  # Currently only computes overlap from next_slice to current_slice but not vice versa
+        for i in range(prediction.shape[0] - 1):
+            current_slice = prediction[i]
+            next_slice = prediction[i+1]
+            next_labels, next_label_counts = np.unique(next_slice, return_counts=True)
+            next_label_counts = next_label_counts[next_labels != 0]
+            next_labels = next_labels[next_labels != 0]
+            new_next_slice = np.zeros_like(next_slice)
+            if len(next_labels) > 0:
+                for next_label, next_label_count in zip(next_labels, next_label_counts):
+                    current_roi_labels = current_slice[next_slice == next_label]
+                    current_roi_labels, current_roi_label_counts = np.unique(current_roi_labels, return_counts=True)
+                    current_roi_label_counts = current_roi_label_counts[current_roi_labels != 0]
+                    current_roi_labels = current_roi_labels[current_roi_labels != 0]
+                    if len(current_roi_labels) > 0:
+                        current_max_count = np.max(current_roi_label_counts)
+                        current_max_count_label = current_roi_labels[np.argmax(current_roi_label_counts)]
+                        overlap = current_max_count / next_label_count
+                        if overlap >= threshold:
+                            new_next_slice[next_slice == next_label] = current_max_count_label
+                        else:
+                            new_next_slice[next_slice == next_label] = next_label
+                    else:
+                        new_next_slice[next_slice == next_label] = next_label
+                prediction[i+1] = new_next_slice
+        return prediction
 
     def update_points_layer(self, points):
         selected_layer = None
