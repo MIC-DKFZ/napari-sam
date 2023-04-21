@@ -1,6 +1,6 @@
 from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QSpacerItem, QSizePolicy
 from qtpy.QtGui import QIntValidator, QDoubleValidator
-from napari_sam.QCollapsibleBox import QCollapsibleBox
+# from napari_sam.QCollapsibleBox import QCollapsibleBox
 from qtpy import QtCore
 from qtpy.QtCore import Qt
 import napari

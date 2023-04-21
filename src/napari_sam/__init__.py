@@ -1,4 +1,4 @@
-__version__ = "0.3.14"
+__version__ = "0.3.15"
 from ._widget import SamWidget
 
 __all__ = (
