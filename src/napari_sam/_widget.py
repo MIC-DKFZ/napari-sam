@@ -213,7 +213,7 @@ class SamWidget(QWidget):
         self.points = defaultdict(list)
         self.point_label = None
 
-        self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+        # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
     def init_auto_mode_settings(self):
         container_widget_auto = QWidget()
@@ -405,7 +405,9 @@ class SamWidget(QWidget):
                     combobox_dict["combobox"].setCurrentIndex(index)
 
         # Inform all comboboxes on layer changes with the viewer.layer_change event
-        self.viewer.events.layers_change.connect(self._on_layers_changed)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            self.viewer.events.layers_change.connect(self._on_layers_changed)
 
         # viewer.layer_change event does not inform about layer name changes, so we have to register a separate event to each layer and each layer that will be created
 
@@ -1040,5 +1042,5 @@ class SamWidget(QWidget):
         )
         raise RuntimeError("Redo currently not supported.")
 
-    def _myfilter(self, row, parent):
-        return "<hidden>" not in self.viewer.layers[row].name
+    # def _myfilter(self, row, parent):
+    #     return "<hidden>" not in self.viewer.layers[row].name
