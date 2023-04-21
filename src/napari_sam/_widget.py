@@ -16,6 +16,7 @@ from vispy.util.keys import CONTROL
 import copy
 import warnings
 from tqdm import tqdm
+from superqt.utils import qdebounced
 
 
 class AnnotatorMode(Enum):
@@ -536,11 +537,7 @@ class SamWidget(QWidget):
                     self._history_limit = self.label_layer._history_limit
                 self._reset_history()
 
-                if self.image_layer.ndim == 3:
-                    # self.image_layer.events.contrast_limits.connect(self.on_contrast_limits_change)
-                    # self.image_layer._qt_controls.contrast_limits_slider.slider.sliderReleased.connect(self.on_contrast_limits_change)
-                    # self.image_layer._qt_controls['contrast_limits'].slider.sliderReleased.connect(self.on_contrast_limits_change)
-                    pass
+                self.image_layer.events.contrast_limits.connect(qdebounced(self.on_contrast_limits_change, timeout=1000))
 
                 self.set_image()
                 self.update_points_layer(None)
@@ -630,6 +627,7 @@ class SamWidget(QWidget):
                     self.points_layer.selected_data = {closest_point_idx}
                 else:
                     self.points_layer.selected_data = set()
+                yield
 
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
@@ -667,7 +665,6 @@ class SamWidget(QWidget):
         self.label_layer.data = self.label_layer.data
 
     def on_contrast_limits_change(self):
-        print("Contrast limit change")
         self.set_image()
 
     def set_image(self):
