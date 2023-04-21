@@ -10,7 +10,6 @@ viewer.window.add_dock_widget(SamWidget(viewer))
 
 # image = np.array(Image.open("/home/k539i/Documents/syncthing-DKFZ/SAM/cats_raw.jpg"))
 image = sitk.GetArrayFromImage(sitk.ReadImage("C:/Users/Cookie/Downloads/img.nii.gz"))
-# image = image[:10, :, :]
 image = np.array(image)
 layer_1 = viewer.add_image(image)
 # layer_1.contrast_limits = (0, 0.075)
