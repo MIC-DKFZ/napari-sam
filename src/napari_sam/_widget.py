@@ -17,6 +17,7 @@ import copy
 import warnings
 from tqdm import tqdm
 from superqt.utils import qdebounced
+from napari_sam.slicer import slicer
 
 
 class AnnotatorMode(Enum):
@@ -177,7 +178,8 @@ class SamWidget(QWidget):
                                  "Negative Click: Control + Middle Mouse Button\n \n"
                                  "Undo: Control + Z\n \n"
                                  "Select Point: Left Click\n \n"
-                                 "Delete Selected Point: Delete\n \n")
+                                 "Delete Selected Point: Delete\n \n"
+                                 "Pick Label: Control + Left Click\n \n")
         self.label_info_click.setWordWrap(True)
         self.l_info_click.addWidget(self.label_info_click)
         self.g_info_click.setLayout(self.l_info_click)
@@ -618,7 +620,7 @@ class SamWidget(QWidget):
             elif CONTROL in event.modifiers and event.button == 3:  # Negative middle click
                 self.do_click(coords, 0)
                 yield
-            elif event.button == 1 and self.points_layer is not None and len(self.points_layer.data) > 0:
+            elif (not CONTROL in event.modifiers) and event.button == 1 and self.points_layer is not None and len(self.points_layer.data) > 0:
                 # Find the closest point to the mouse click
                 distances = np.linalg.norm(self.points_layer.data - coords, axis=1)
                 closest_point_idx = np.argmin(distances)
@@ -629,6 +631,10 @@ class SamWidget(QWidget):
                     self.points_layer.selected_data = {closest_point_idx}
                 else:
                     self.points_layer.selected_data = set()
+                yield
+            elif (CONTROL in event.modifiers) and event.button == 1:
+                picked_label = self.label_layer.data[slicer(self.label_layer.data, coords)]
+                self.label_layer.selected_label = picked_label
                 yield
 
     def on_delete(self, layer):
