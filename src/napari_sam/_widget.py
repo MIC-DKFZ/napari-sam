@@ -32,6 +32,12 @@ class SegmentationMode(Enum):
     INSTANCE = 1
 
 
+class BboxState(Enum):
+    CLICK = 0
+    DRAG = 1
+    RELEASE = 2
+
+
 class SamWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
@@ -89,7 +95,7 @@ class SamWidget(QWidget):
         self.g_annotation = QGroupBox("Annotation mode")
         self.l_annotation = QVBoxLayout()
 
-        self.rb_click = QRadioButton("Click")
+        self.rb_click = QRadioButton("Click && Bounding Box")
         self.rb_click.setChecked(True)
         self.rb_click.setToolTip("Positive Click: Middle Mouse Button\n \n"
                                  "Negative Click: Control + Middle Mouse Button \n \n"
@@ -99,11 +105,11 @@ class SamWidget(QWidget):
         self.l_annotation.addWidget(self.rb_click)
         self.rb_click.clicked.connect(self.on_everything_mode_checked)
 
-        self.rb_bbox = QRadioButton("Bounding Box (WIP)")
-        self.rb_bbox.setEnabled(False)
-        self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
-        self.rb_bbox.setStyleSheet("color: gray")
-        self.l_annotation.addWidget(self.rb_bbox)
+        # self.rb_bbox = QRadioButton("Bounding Box (WIP)")
+        # self.rb_bbox.setEnabled(False)
+        # self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
+        # self.rb_bbox.setStyleSheet("color: gray")
+        # self.l_annotation.addWidget(self.rb_bbox)
 
         self.rb_auto = QRadioButton("Everything")
         # self.rb_auto.setEnabled(False)
@@ -151,6 +157,11 @@ class SamWidget(QWidget):
         self.btn_activate.setEnabled(False)
         self.is_active = False
         main_layout.addWidget(self.btn_activate)
+
+        self.btn_mode_switch = QPushButton("Switch to BBox Mode")
+        self.btn_mode_switch.clicked.connect(self._switch_mode)
+        self.btn_mode_switch.setEnabled(False)
+        main_layout.addWidget(self.btn_mode_switch)
 
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
@@ -201,9 +212,11 @@ class SamWidget(QWidget):
         self.label_layer_changes = None
         self.label_color_mapping = None
         self.points_layer = None
-        self.points_layer_name = "Ignore this layer"  # "Ignore this layer <hidden>"
+        self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
         self.old_points = np.zeros(0)
         self.point_size = 10
+        self.bbox_layer = None
+        self.bbox_layer_name = "Ignore this layer2"
 
         self.init_comboboxes()
 
@@ -214,6 +227,8 @@ class SamWidget(QWidget):
 
         self.points = defaultdict(list)
         self.point_label = None
+
+        self.bboxes = {}
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
@@ -495,9 +510,9 @@ class SamWidget(QWidget):
 
             if self.rb_click.isChecked():
                 self.annotator_mode = AnnotatorMode.CLICK
-                self.rb_bbox.setEnabled(False)
+                # self.rb_bbox.setEnabled(False)
                 self.rb_auto.setEnabled(False)
-                self.rb_bbox.setStyleSheet("color: gray")
+                # self.rb_bbox.setStyleSheet("color: gray")
                 self.rb_auto.setStyleSheet("color: gray")
             elif self.rb_bbox.isChecked():
                 self.annotator_mode = AnnotatorMode.BBOX
@@ -508,9 +523,9 @@ class SamWidget(QWidget):
             elif self.rb_auto.isChecked():
                 self.annotator_mode = AnnotatorMode.AUTO
                 self.rb_click.setEnabled(False)
-                self.rb_bbox.setEnabled(False)
+                # self.rb_bbox.setEnabled(False)
                 self.rb_click.setStyleSheet("color: gray")
-                self.rb_bbox.setStyleSheet("color: gray")
+                # self.rb_bbox.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Annotator mode not implemented.")
 
@@ -521,6 +536,10 @@ class SamWidget(QWidget):
                 self.cb_model_type.setEnabled(False)
                 self.cb_image_layers.setEnabled(False)
                 self.cb_label_layers.setEnabled(False)
+                self.btn_mode_switch.setEnabled(True)
+                self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
+                self.bbox_layer.editable = False
+                self.bbox_first_coords = None
 
             if self.rb_semantic.isChecked():
                 self.segmentation_mode = SegmentationMode.SEMANTIC
@@ -533,7 +552,7 @@ class SamWidget(QWidget):
             else:
                 raise RuntimeError("Segmentation mode not implemented.")
 
-            if self.annotator_mode == AnnotatorMode.CLICK:
+            if self.annotator_mode == AnnotatorMode.CLICK or self.annotator_mode == AnnotatorMode.BBOX:
                 self.create_label_color_mapping()
 
                 with warnings.catch_warnings():
@@ -578,18 +597,24 @@ class SamWidget(QWidget):
         self.cb_model_type.setEnabled(True)
         self.cb_image_layers.setEnabled(True)
         self.cb_label_layers.setEnabled(True)
+        self.btn_mode_switch.setEnabled(False)
         self.remove_all_widget_callbacks(self.viewer)
         if self.label_layer is not None:
             self.remove_all_widget_callbacks(self.label_layer)
         if self.points_layer is not None and self.points_layer in self.viewer.layers:
             self.viewer.layers.remove(self.points_layer)
+        if self.bbox_layer is not None and self.bbox_layer in self.viewer.layers:
+            self.viewer.layers.remove(self.bbox_layer)
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
         self.label_layer_changes = None
         self.points_layer = None
+        self.bbox_layer = None
+        self.bbox_first_coords = None
         self.annotator_mode = AnnotatorMode.NONE
         self.points = defaultdict(list)
+        self.bboxes = {}
         self.point_label = None
         self.sam_logits = None
         self.rb_click.setEnabled(True)
@@ -602,6 +627,14 @@ class SamWidget(QWidget):
         self.rb_instance.setStyleSheet("")
         self._reset_history()
 
+    def _switch_mode(self):
+        if self.annotator_mode == AnnotatorMode.CLICK:
+            self.btn_mode_switch.setText("Switch to Click Mode")
+            self.annotator_mode = AnnotatorMode.BBOX
+        else:
+            self.btn_mode_switch.setText("Switch to BBox Mode")
+            self.annotator_mode = AnnotatorMode.CLICK
+
     def create_label_color_mapping(self, num_labels=1000):
         if self.label_layer is not None:
             self.label_color_mapping = {"label_mapping": {}, "color_mapping": {}}
@@ -611,14 +644,14 @@ class SamWidget(QWidget):
                 self.label_color_mapping["color_mapping"][str(color)] = label
 
     def callback_click(self, layer, event):
+        data_coordinates = self.image_layer.world_to_data(event.position)
+        coords = np.round(data_coordinates).astype(int)
         if self.annotator_mode == AnnotatorMode.CLICK:
-            data_coordinates = self.image_layer.world_to_data(event.position)
-            coords = np.round(data_coordinates).astype(int)
             if (not CONTROL in event.modifiers) and event.button == 3:  # Positive middle click
-                self.do_click(coords, 1)
+                self.do_point_click(coords, 1)
                 yield
             elif CONTROL in event.modifiers and event.button == 3:  # Negative middle click
-                self.do_click(coords, 0)
+                self.do_point_click(coords, 0)
                 yield
             elif (not CONTROL in event.modifiers) and event.button == 1 and self.points_layer is not None and len(self.points_layer.data) > 0:
                 # Find the closest point to the mouse click
@@ -636,6 +669,18 @@ class SamWidget(QWidget):
                 picked_label = self.label_layer.data[slicer(self.label_layer.data, coords)]
                 self.label_layer.selected_label = picked_label
                 yield
+        elif self.annotator_mode == AnnotatorMode.BBOX:
+            if (not CONTROL in event.modifiers) and event.button == 3:  # Positive middle click
+                self.do_bbox_click(coords, BboxState.CLICK)
+                yield
+                while event.type == 'mouse_move':
+                    data_coordinates = self.image_layer.world_to_data(event.position)
+                    coords = np.round(data_coordinates).astype(int)
+                    self.do_bbox_click(coords, BboxState.DRAG)
+                    yield
+                data_coordinates = self.image_layer.world_to_data(event.position)
+                coords = np.round(data_coordinates).astype(int)
+                self.do_bbox_click(coords, BboxState.RELEASE)
 
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
@@ -707,7 +752,7 @@ class SamWidget(QWidget):
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
 
-    def do_click(self, coords, is_positive):
+    def do_point_click(self, coords, is_positive):
         # Check if there is already a point at these coordinates
         for label, points in self.points.items():
             if np.any((coords == points).all(1)):
@@ -726,6 +771,35 @@ class SamWidget(QWidget):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
             self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+
+    def do_bbox_click(self, coords, bbox_state):
+        self.bbox_layer.data = []
+        if bbox_state == BboxState.CLICK:
+            if not (self.image_layer.ndim == 2 or self.image_layer.ndim == 3):
+                raise RuntimeError("Only 2D and 3D images are supported.")
+            self.bbox_first_coords = coords
+            rectangle = np.asarray([coords, coords, coords, coords])
+        elif bbox_state == BboxState.DRAG:
+            if self.image_layer.ndim == 2:
+                rectangle = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
+            elif self.image_layer.ndim == 3:
+                pass
+            else:
+                raise RuntimeError("Only 2D and 3D images are supported.")
+        else:
+            if self.image_layer.ndim == 2:
+                rectangle = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
+            elif self.image_layer.ndim == 3:
+                pass
+            else:
+                raise RuntimeError("Only 2D and 3D images are supported.")
+        rectangle = np.rint(rectangle).astype(np.int32)
+        self.bbox_layer.add_rectangles(
+            [rectangle],
+            edge_width=10,
+            edge_color='skyblue',
+            face_color=(0, 0, 0, 0)
+        )
 
     def run(self, points, point_label, current_point, current_label):
         self.update_points_layer(points)
