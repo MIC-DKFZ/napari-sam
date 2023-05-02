@@ -19,14 +19,14 @@ At last, our SAM integration supports both **2D and 3D images**!
 
 Everything mode             |  Click-based semantic segmentation mode |  Click-based instance segmentation mode
 :-------------------------:|:-------------------------:|:-------------------------:
-![](cats_everything.png)  |  ![](cats_semantic.png)  |  ![](cats_instance.png)
+![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_everything.png)  |  ![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_semantic.png)  |  ![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_instance.png)
 
 ----------------------------------
 <h2 align="center">SAM in Napari demo</h2>
 <p align="center"><em>Click to play the video</em></p>
 <div align="center">
   <a href="https://www.youtube.com/watch?v=OPE1Xnw487E">
-    <img src="thumpnail.jpeg" alt="SAM Demo">
+    <img src="https://github.com/MIC-DKFZ/napari-sam/raw/main/thumpnail.jpeg" alt="SAM Demo">
   </a>
 </div>
 
@@ -96,9 +96,9 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [PyPI]: https://pypi.org/
 
 # Acknowledgements
-<img src="HI_Logo.png" height="100px" />
+<img src="https://github.com/MIC-DKFZ/napari-sam/raw/main/HI_Logo.png" height="100px" />
 
-<img src="dkfz_logo.png" height="100px" />
+<img src="https://github.com/MIC-DKFZ/napari-sam/raw/main/dkfz_logo.png" height="100px" />
 
 napari-sam is developed and maintained by the Applied Computer Vision Lab (ACVL) of [Helmholtz Imaging](http://helmholtz-imaging.de) 
 and the [Division of Medical Image Computing](https://www.dkfz.de/en/mic/index.php) at the 
