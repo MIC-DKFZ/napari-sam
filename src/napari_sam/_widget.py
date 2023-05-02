@@ -32,6 +32,12 @@ class SegmentationMode(Enum):
     INSTANCE = 1
 
 
+class BboxState(Enum):
+    CLICK = 0
+    DRAG = 1
+    RELEASE = 2
+
+
 class SamWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
@@ -89,7 +95,7 @@ class SamWidget(QWidget):
         self.g_annotation = QGroupBox("Annotation mode")
         self.l_annotation = QVBoxLayout()
 
-        self.rb_click = QRadioButton("Click")
+        self.rb_click = QRadioButton("Click && Bounding Box")
         self.rb_click.setChecked(True)
         self.rb_click.setToolTip("Positive Click: Middle Mouse Button\n \n"
                                  "Negative Click: Control + Middle Mouse Button \n \n"
@@ -99,11 +105,11 @@ class SamWidget(QWidget):
         self.l_annotation.addWidget(self.rb_click)
         self.rb_click.clicked.connect(self.on_everything_mode_checked)
 
-        self.rb_bbox = QRadioButton("Bounding Box (WIP)")
-        self.rb_bbox.setEnabled(False)
-        self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
-        self.rb_bbox.setStyleSheet("color: gray")
-        self.l_annotation.addWidget(self.rb_bbox)
+        # self.rb_bbox = QRadioButton("Bounding Box (WIP)")
+        # self.rb_bbox.setEnabled(False)
+        # self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
+        # self.rb_bbox.setStyleSheet("color: gray")
+        # self.l_annotation.addWidget(self.rb_bbox)
 
         self.rb_auto = QRadioButton("Everything")
         # self.rb_auto.setEnabled(False)
@@ -143,6 +149,9 @@ class SamWidget(QWidget):
         # self.rb_instance.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_instance)
 
+        self.rb_semantic.clicked.connect(self.on_segmentation_mode_changed)
+        self.rb_instance.clicked.connect(self.on_segmentation_mode_changed)
+
         self.g_segmentation.setLayout(self.l_segmentation)
         main_layout.addWidget(self.g_segmentation)
 
@@ -151,6 +160,11 @@ class SamWidget(QWidget):
         self.btn_activate.setEnabled(False)
         self.is_active = False
         main_layout.addWidget(self.btn_activate)
+
+        self.btn_mode_switch = QPushButton("Switch to BBox Mode")
+        self.btn_mode_switch.clicked.connect(self._switch_mode)
+        self.btn_mode_switch.setEnabled(False)
+        main_layout.addWidget(self.btn_mode_switch)
 
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
@@ -201,9 +215,11 @@ class SamWidget(QWidget):
         self.label_layer_changes = None
         self.label_color_mapping = None
         self.points_layer = None
-        self.points_layer_name = "Ignore this layer"  # "Ignore this layer <hidden>"
+        self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
         self.old_points = np.zeros(0)
         self.point_size = 10
+        self.bbox_layer = None
+        self.bbox_layer_name = "Ignore this layer2"
 
         self.init_comboboxes()
 
@@ -214,6 +230,8 @@ class SamWidget(QWidget):
 
         self.points = defaultdict(list)
         self.point_label = None
+
+        self.bboxes = {}
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
@@ -343,6 +361,12 @@ class SamWidget(QWidget):
         # scroll_area_info.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area_auto.hide()
         return scroll_area_auto
+
+    def on_segmentation_mode_changed(self):
+        if self.rb_semantic.isChecked():
+            self.segmentation_mode = SegmentationMode.SEMANTIC
+        if self.rb_instance.isChecked():
+            self.segmentation_mode = SegmentationMode.INSTANCE
 
     def on_everything_mode_checked(self):
         if self.rb_auto.isChecked():
@@ -495,9 +519,9 @@ class SamWidget(QWidget):
 
             if self.rb_click.isChecked():
                 self.annotator_mode = AnnotatorMode.CLICK
-                self.rb_bbox.setEnabled(False)
+                # self.rb_bbox.setEnabled(False)
                 self.rb_auto.setEnabled(False)
-                self.rb_bbox.setStyleSheet("color: gray")
+                # self.rb_bbox.setStyleSheet("color: gray")
                 self.rb_auto.setStyleSheet("color: gray")
             elif self.rb_bbox.isChecked():
                 self.annotator_mode = AnnotatorMode.BBOX
@@ -508,9 +532,9 @@ class SamWidget(QWidget):
             elif self.rb_auto.isChecked():
                 self.annotator_mode = AnnotatorMode.AUTO
                 self.rb_click.setEnabled(False)
-                self.rb_bbox.setEnabled(False)
+                # self.rb_bbox.setEnabled(False)
                 self.rb_click.setStyleSheet("color: gray")
-                self.rb_bbox.setStyleSheet("color: gray")
+                # self.rb_bbox.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Annotator mode not implemented.")
 
@@ -521,19 +545,26 @@ class SamWidget(QWidget):
                 self.cb_model_type.setEnabled(False)
                 self.cb_image_layers.setEnabled(False)
                 self.cb_label_layers.setEnabled(False)
+                self.btn_mode_switch.setEnabled(True)
+                self.btn_mode_switch.setText("Switch to BBox Mode")
+                self.annotator_mode = AnnotatorMode.CLICK
+                self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
+                self.bbox_layer.editable = False
+                self.bbox_first_coords = None
+                self.prev_segmentation_mode = SegmentationMode.SEMANTIC
 
             if self.rb_semantic.isChecked():
                 self.segmentation_mode = SegmentationMode.SEMANTIC
-                self.rb_instance.setEnabled(False)
-                self.rb_instance.setStyleSheet("color: gray")
+                # self.rb_instance.setEnabled(False)
+                # self.rb_instance.setStyleSheet("color: gray")
             elif self.rb_instance.isChecked():
                 self.segmentation_mode = SegmentationMode.INSTANCE
-                self.rb_semantic.setEnabled(False)
-                self.rb_semantic.setStyleSheet("color: gray")
+                # self.rb_semantic.setEnabled(False)
+                # self.rb_semantic.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Segmentation mode not implemented.")
 
-            if self.annotator_mode == AnnotatorMode.CLICK:
+            if self.annotator_mode == AnnotatorMode.CLICK or self.annotator_mode == AnnotatorMode.BBOX:
                 self.create_label_color_mapping()
 
                 with warnings.catch_warnings():
@@ -578,18 +609,27 @@ class SamWidget(QWidget):
         self.cb_model_type.setEnabled(True)
         self.cb_image_layers.setEnabled(True)
         self.cb_label_layers.setEnabled(True)
+        self.btn_mode_switch.setEnabled(False)
+        self.btn_mode_switch.setText("Switch to BBox Mode")
+        self.prev_segmentation_mode = SegmentationMode.SEMANTIC
+        self.annotator_mode = AnnotatorMode.CLICK
         self.remove_all_widget_callbacks(self.viewer)
         if self.label_layer is not None:
             self.remove_all_widget_callbacks(self.label_layer)
         if self.points_layer is not None and self.points_layer in self.viewer.layers:
             self.viewer.layers.remove(self.points_layer)
+        if self.bbox_layer is not None and self.bbox_layer in self.viewer.layers:
+            self.viewer.layers.remove(self.bbox_layer)
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
         self.label_layer_changes = None
         self.points_layer = None
+        self.bbox_layer = None
+        self.bbox_first_coords = None
         self.annotator_mode = AnnotatorMode.NONE
         self.points = defaultdict(list)
+        self.bboxes = {}
         self.point_label = None
         self.sam_logits = None
         self.rb_click.setEnabled(True)
@@ -602,6 +642,27 @@ class SamWidget(QWidget):
         self.rb_instance.setStyleSheet("")
         self._reset_history()
 
+    def _switch_mode(self):
+        if self.annotator_mode == AnnotatorMode.CLICK:
+            self.btn_mode_switch.setText("Switch to Click Mode")
+            self.annotator_mode = AnnotatorMode.BBOX
+            self.rb_semantic.setEnabled(False)
+            self.rb_semantic.setChecked(False)
+            self.rb_instance.setChecked(True)
+            self.rb_semantic.setStyleSheet("color: gray")
+            self.prev_segmentation_mode = self.segmentation_mode
+            self.segmentation_mode = SegmentationMode.INSTANCE
+        else:
+            self.btn_mode_switch.setText("Switch to BBox Mode")
+            self.annotator_mode = AnnotatorMode.CLICK
+            self.rb_semantic.setEnabled(True)
+            self.rb_semantic.setStyleSheet("")
+            self.segmentation_mode = self.prev_segmentation_mode
+            if self.segmentation_mode == SegmentationMode.SEMANTIC:
+                self.rb_semantic.setChecked(True)
+            else:
+                self.rb_instance.setChecked(True)
+
     def create_label_color_mapping(self, num_labels=1000):
         if self.label_layer is not None:
             self.label_color_mapping = {"label_mapping": {}, "color_mapping": {}}
@@ -611,14 +672,14 @@ class SamWidget(QWidget):
                 self.label_color_mapping["color_mapping"][str(color)] = label
 
     def callback_click(self, layer, event):
+        data_coordinates = self.image_layer.world_to_data(event.position)
+        coords = np.round(data_coordinates).astype(int)
         if self.annotator_mode == AnnotatorMode.CLICK:
-            data_coordinates = self.image_layer.world_to_data(event.position)
-            coords = np.round(data_coordinates).astype(int)
             if (not CONTROL in event.modifiers) and event.button == 3:  # Positive middle click
-                self.do_click(coords, 1)
+                self.do_point_click(coords, 1)
                 yield
             elif CONTROL in event.modifiers and event.button == 3:  # Negative middle click
-                self.do_click(coords, 0)
+                self.do_point_click(coords, 0)
                 yield
             elif (not CONTROL in event.modifiers) and event.button == 1 and self.points_layer is not None and len(self.points_layer.data) > 0:
                 # Find the closest point to the mouse click
@@ -636,12 +697,24 @@ class SamWidget(QWidget):
                 picked_label = self.label_layer.data[slicer(self.label_layer.data, coords)]
                 self.label_layer.selected_label = picked_label
                 yield
+        elif self.annotator_mode == AnnotatorMode.BBOX:
+            if (not CONTROL in event.modifiers) and event.button == 3:  # Positive middle click
+                self.do_bbox_click(coords, BboxState.CLICK)
+                yield
+                while event.type == 'mouse_move':
+                    data_coordinates = self.image_layer.world_to_data(event.position)
+                    coords = np.round(data_coordinates).astype(int)
+                    self.do_bbox_click(coords, BboxState.DRAG)
+                    yield
+                data_coordinates = self.image_layer.world_to_data(event.position)
+                coords = np.round(data_coordinates).astype(int)
+                self.do_bbox_click(coords, BboxState.RELEASE)
 
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
             self.points_layer.data = np.delete(self.points_layer.data, selected_points[0], axis=0)
-            self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
+            self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
             deleted_point, _ = self.find_changed_point(self.old_points, self.points_layer.data)
             label = self.find_point_label(deleted_point)
             index_to_remove = np.where((self.points[label] == deleted_point).all(axis=1))[0]
@@ -655,7 +728,7 @@ class SamWidget(QWidget):
                 self.sam_logits[deleted_point[0]] = None
             else:
                 raise RuntimeError("Point deletion not implemented for this dimensionality.")
-            self.run(self.points, self.point_label, deleted_point, label)
+            self.predict_click(self.points, self.point_label, deleted_point, label)
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
@@ -707,14 +780,14 @@ class SamWidget(QWidget):
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
 
-    def do_click(self, coords, is_positive):
+    def do_point_click(self, coords, is_positive):
         # Check if there is already a point at these coordinates
         for label, points in self.points.items():
             if np.any((coords == points).all(1)):
                 warnings.warn("There is already a point in this location. This click will be ignored.")
                 return
 
-        self._save_history({"points": copy.deepcopy(self.points), "logits": self.sam_logits, "point_label": self.point_label})
+        self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
 
         self.point_label = self.label_layer.selected_label
         if not is_positive:
@@ -722,12 +795,12 @@ class SamWidget(QWidget):
 
         self.points[self.point_label].append(coords)
 
-        self.run(self.points, self.point_label, coords, self.point_label)
+        self.predict_click(self.points, self.point_label, coords, self.point_label)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
             self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
-    def run(self, points, point_label, current_point, current_label):
+    def predict_click(self, points, point_label, current_point, current_label):
         self.update_points_layer(points)
 
         if points:
@@ -739,16 +812,19 @@ class SamWidget(QWidget):
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
 
-            prediction, predicted_slices = self.predict_click(points_flattened, labels_flattended, current_point, current_label)
+            x_coord = current_point[0]
+            prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(current_point[0]))
+            if self.image_layer.ndim == 2:
+                x_coord = slice(None, None)
         else:
             prediction = np.zeros_like(self.label_layer.data)
-            predicted_slices = slice(None, None)
+            x_coord = slice(None, None)
 
         if prediction is not None:
             label_layer = np.asarray(self.label_layer.data)
             changed_indices = np.where(prediction == 1)
             index_labels_old = label_layer[changed_indices]
-            label_layer[predicted_slices][label_layer[predicted_slices] == point_label] = 0
+            label_layer[x_coord][label_layer[x_coord] == point_label] = 0
             if self.segmentation_mode == SegmentationMode.SEMANTIC or point_label == 0:
                 label_layer[prediction == 1] = point_label
             else:
@@ -759,90 +835,95 @@ class SamWidget(QWidget):
             self.old_points = copy.deepcopy(self.points_layer.data)
             # self.label_layer.refresh()
 
-    def predict_click(self, points, labels, current_point, current_label):
-        points = np.asarray(points)
-        if current_point is not None:
+    def do_bbox_click(self, coords, bbox_state):
+        if bbox_state == BboxState.CLICK:
+            if not (self.image_layer.ndim == 2 or self.image_layer.ndim == 3):
+                raise RuntimeError("Only 2D and 3D images are supported.")
+            self.bbox_first_coords = coords
+        elif bbox_state == BboxState.DRAG:
             if self.image_layer.ndim == 2:
-                self.sam_predictor.features = self.sam_features
-                prediction, _, self.sam_logits = self.sam_predictor.predict(
-                    point_coords=np.flip(points, axis=-1),
-                    point_labels=np.asarray(labels),
-                    mask_input=self.sam_logits,
-                    multimask_output=False,
-                )
-                prediction = prediction[0]
-                predicted_slices = None
+                bbox_tmp = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
             elif self.image_layer.ndim == 3:
-                x_coords = np.unique(points[:, 0])
-                groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
-                x_coord = current_point[0]
-                prediction = np.zeros_like(self.label_layer.data)
-
-                group_points = groups[x_coord]
-                group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-                group_points = [point[1:] for point in group_points]
-                self.sam_predictor.features = self.sam_features[x_coord]
-                prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
-                    point_coords=np.flip(group_points, axis=-1),
-                    point_labels=np.asarray(group_labels),
-                    mask_input=self.sam_logits[x_coord],
-                    multimask_output=False,
-                )
-                prediction_yz = prediction_yz[0]
-                prediction[x_coord, :, :] = prediction_yz
-                predicted_slices = x_coord
-            # elif self.image_layer.ndim == 3:
-            #     z_coords = np.unique(points[:, 2])
-            #     groups = {x_coord: list(points[points[:, 2] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
-            #     image_point_proposals, image_label_proposals = [], []
-            #
-            #     for x_coord, group_points in groups.items():
-            #         group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-            #         group_points = [point[:2] for point in group_points]
-            #         self.sam_predictor.features = self.sam_features[x_coord - 1]
-            #         prediction_yz, _, _ = self.sam_predictor.predict(
-            #             point_coords=np.flip(group_points, axis=-1),
-            #             point_labels=np.asarray(group_labels),
-            #             mask_input=self.sam_logits,
-            #             multimask_output=False,
-            #         )
-            #         prediction_yz = prediction_yz[0]
-            #
-            #         for i, point in enumerate(group_points):
-            #             y_coord = point[1]
-            #             prediction_x = prediction_yz[:, y_coord]
-            #             point_proposals_x = np.asarray(list(zip(*np.where(prediction_x)))).flatten()
-            #             point_proposals = [(point_proposal_x, y_coord, x_coord) for point_proposal_x in point_proposals_x]
-            #             image_point_proposals.extend(point_proposals)
-            #             image_label_proposals.extend([group_labels[i]] * len(point_proposals))
-            #
-            #     image_point_proposals = np.asarray(image_point_proposals)
-            #     image_label_proposals = np.asarray(image_label_proposals)
-            #     z_coords = np.unique(image_point_proposals[:, 0])
-            #     groups = {x_coord: list(image_point_proposals[image_point_proposals[:, 0] == x_coord]) for x_coord in z_coords}  # Group points if they are on the same image slice
-            #
-            #     prediction = np.zeros_like(self.label_layer.data)
-            #     for x_coord, group_points in groups.items():
-            #         group_labels = [image_label_proposals[np.argwhere(np.all(image_point_proposals == point, axis=1)).flatten()[0]] for point in group_points]
-            #         group_points = [point[1:] for point in group_points]
-            #         self.sam_predictor.features = self.sam_features[x_coord - 1]
-            #         prediction_yz, _, _ = self.sam_predictor.predict(
-            #             point_coords=np.flip(group_points, axis=-1),
-            #             point_labels=np.asarray(group_labels),
-            #             mask_input=self.sam_logits,
-            #             multimask_output=False,
-            #         )
-            #         prediction_yz = prediction_yz[0]
-            #         prediction[x_coord, :, :] = prediction_yz  # prediction_yz is 2D
-            #     print("")
-            #     sam_logits = None  # TODO: Use sam_logits
+                raise RuntimeError("3D images for bbox mode are not supported.")
             else:
                 raise RuntimeError("Only 2D and 3D images are supported.")
+            bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
+            self.update_bbox_layer(self.bboxes, bbox_tmp=bbox_tmp)
         else:
-            warnings.warn("Could not identify click position.")
-            prediction = None
-            predicted_slices = None
-        return prediction, predicted_slices
+            self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
+            if self.image_layer.ndim == 2:
+                bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
+            elif self.image_layer.ndim == 3:
+                raise RuntimeError("3D images for bbox mode are not supported.")
+            else:
+                raise RuntimeError("Only 2D and 3D images are supported.")
+            bbox_final = np.rint(bbox_final).astype(np.int32)
+            new_label = np.max(self.label_layer.data) + 1
+            self.label_layer.selected_label = new_label
+            self.bboxes[new_label] = bbox_final
+            self.update_bbox_layer(self.bboxes)
+
+            prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final))
+
+            # if self.image_layer.ndim == 2:
+            #     x_coord = slice(None, None)
+
+            label_layer = np.asarray(self.label_layer.data)
+            changed_indices = np.where(prediction == 1)
+            index_labels_old = label_layer[changed_indices]
+            # label_layer[x_coord][label_layer[x_coord] == point_label] = 0
+            label_layer[(prediction == 1) & (label_layer == 0)] = new_label
+            index_labels_new = label_layer[changed_indices]
+            self.label_layer_changes = {"indices": changed_indices, "old_values": index_labels_old, "new_values": index_labels_new}
+            self.label_layer.data = label_layer
+            self.old_points = copy.deepcopy(self.points_layer.data)
+            # self.label_layer.refresh()
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+
+    def predict_sam(self, points, labels, bbox, x_coord=None):
+        if self.image_layer.ndim == 2:
+            if points is not None:
+                points = np.flip(points, axis=-1)
+                labels = np.asarray(labels)
+            if bbox is not None:
+                # bbox = [np.flip(bbox[0, ...]), np.flip(bbox[2, ...])]
+                top_left_coord, bottom_right_coord = self.find_corners(bbox)
+                bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
+                # bbox = [bottom_right_coord, top_left_coord]
+                bbox = np.asarray(bbox).flatten()
+                # crop = self.image_layer.data[slicer(self.image_layer.data, [[top_left_coord[0], bottom_right_coord[0]], [top_left_coord[1], bottom_right_coord[1]]])]
+            self.sam_predictor.features = self.sam_features
+            prediction, _, self.sam_logits = self.sam_predictor.predict(
+                point_coords=points,
+                point_labels=labels,
+                box=bbox,
+                mask_input=self.sam_logits,
+                multimask_output=False,
+            )
+            prediction = prediction[0]
+        elif self.image_layer.ndim == 3:
+            points = np.asarray(points)
+            x_coords = np.unique(points[:, 0])
+            groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+            prediction = np.zeros_like(self.label_layer.data)
+
+            group_points = groups[x_coord]
+            group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+            group_points = [point[1:] for point in group_points]
+            self.sam_predictor.features = self.sam_features[x_coord]
+            prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
+                point_coords=np.flip(group_points, axis=-1),
+                point_labels=np.asarray(group_labels),
+                mask_input=self.sam_logits[x_coord],
+                multimask_output=False,
+            )
+            prediction_yz = prediction_yz[0]
+            prediction[x_coord, :, :] = prediction_yz
+        else:
+            raise RuntimeError("Only 2D and 3D images are supported.")
+        return prediction
 
     def predict_everything(self):
         if self.image_layer.ndim == 2:
@@ -937,6 +1018,20 @@ class SamWidget(QWidget):
             self.viewer.layers.selection.active = selected_layer
         self.points_layer.refresh()
 
+    def update_bbox_layer(self, bboxes, bbox_tmp=None):
+        bboxes_flattened = []
+        edge_colors = []
+        for _, bbox in bboxes.items():
+            bboxes_flattened.append(bbox)
+            edge_colors.append('skyblue')
+        if bbox_tmp is not None:
+            bboxes_flattened.append(bbox_tmp)
+            edge_colors.append('steelblue')
+        self.bbox_layer.data = bboxes_flattened
+        self.bbox_layer.edge_width = [10] * len(bboxes_flattened)
+        self.bbox_layer.edge_color = edge_colors
+        self.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
+
     def find_changed_point(self, old_points, new_points):
         if len(new_points) == 0:
             old_point = old_points
@@ -980,6 +1075,25 @@ class SamWidget(QWidget):
                         del callbacks[key]
             else:
                 raise RuntimeError("Could not determine callbacks type.")
+
+    def find_corners(self, coords):
+        # convert the coordinates to numpy arrays
+        coords = np.array(coords)
+
+        # find the indices of the leftmost, rightmost, topmost, and bottommost coordinates
+        left_idx = np.min(coords[:, 0])
+        right_idx = np.max(coords[:, 0])
+        top_idx = np.min(coords[:, 1])
+        bottom_idx = np.max(coords[:, 1])
+
+        # determine the top left and bottom right coordinates
+        # top_left_coord = coords[top_idx, :] if left_idx != top_idx else coords[right_idx, :]
+        # bottom_right_coord = coords[bottom_idx, :] if right_idx != bottom_idx else coords[left_idx, :]
+
+        top_left_coord = [left_idx, top_idx]
+        bottom_right_coord = [right_idx, bottom_idx]
+
+        return top_left_coord, bottom_right_coord
 
     def _reset_history(self, event=None):
         self._undo_history = deque()
@@ -1034,8 +1148,9 @@ class SamWidget(QWidget):
         self.points = history_item["points"]
         self.point_label = history_item["point_label"]
         self.sam_logits = history_item["logits"]
-        # self.run(history_item["points"], history_item["point_label"])
+        self.bboxes = history_item["bboxes"]
         self.update_points_layer(self.points)
+        self.update_bbox_layer(self.bboxes)
 
     def undo(self):
         self._load_history(

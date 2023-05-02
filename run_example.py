@@ -8,7 +8,7 @@ from PIL import Image
 viewer = Viewer()
 viewer.window.add_dock_widget(SamWidget(viewer))
 
-image = np.array(Image.open("/home/k539i/Documents/syncthing-DKFZ/SAM/cats_raw.jpg"))
+image = np.array(Image.open("C:/Users/Cookie/Downloads/cats.jpg"))
 image = np.array(image)
 layer_1 = viewer.add_image(image)
 # layer_1.contrast_limits = (0, 0.075)
