@@ -149,6 +149,9 @@ class SamWidget(QWidget):
         # self.rb_instance.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_instance)
 
+        self.rb_semantic.clicked.connect(self.on_segmentation_mode_changed)
+        self.rb_instance.clicked.connect(self.on_segmentation_mode_changed)
+
         self.g_segmentation.setLayout(self.l_segmentation)
         main_layout.addWidget(self.g_segmentation)
 
@@ -359,6 +362,12 @@ class SamWidget(QWidget):
         scroll_area_auto.hide()
         return scroll_area_auto
 
+    def on_segmentation_mode_changed(self):
+        if self.rb_semantic.isChecked():
+            self.segmentation_mode = SegmentationMode.SEMANTIC
+        if self.rb_instance.isChecked():
+            self.segmentation_mode = SegmentationMode.INSTANCE
+
     def on_everything_mode_checked(self):
         if self.rb_auto.isChecked():
             self.rb_semantic.setEnabled(False)
@@ -537,18 +546,21 @@ class SamWidget(QWidget):
                 self.cb_image_layers.setEnabled(False)
                 self.cb_label_layers.setEnabled(False)
                 self.btn_mode_switch.setEnabled(True)
+                self.btn_mode_switch.setText("Switch to BBox Mode")
+                self.annotator_mode = AnnotatorMode.CLICK
                 self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
                 self.bbox_layer.editable = False
                 self.bbox_first_coords = None
+                self.prev_segmentation_mode = SegmentationMode.SEMANTIC
 
             if self.rb_semantic.isChecked():
                 self.segmentation_mode = SegmentationMode.SEMANTIC
-                self.rb_instance.setEnabled(False)
-                self.rb_instance.setStyleSheet("color: gray")
+                # self.rb_instance.setEnabled(False)
+                # self.rb_instance.setStyleSheet("color: gray")
             elif self.rb_instance.isChecked():
                 self.segmentation_mode = SegmentationMode.INSTANCE
-                self.rb_semantic.setEnabled(False)
-                self.rb_semantic.setStyleSheet("color: gray")
+                # self.rb_semantic.setEnabled(False)
+                # self.rb_semantic.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Segmentation mode not implemented.")
 
@@ -598,6 +610,9 @@ class SamWidget(QWidget):
         self.cb_image_layers.setEnabled(True)
         self.cb_label_layers.setEnabled(True)
         self.btn_mode_switch.setEnabled(False)
+        self.btn_mode_switch.setText("Switch to BBox Mode")
+        self.prev_segmentation_mode = SegmentationMode.SEMANTIC
+        self.annotator_mode = AnnotatorMode.CLICK
         self.remove_all_widget_callbacks(self.viewer)
         if self.label_layer is not None:
             self.remove_all_widget_callbacks(self.label_layer)
@@ -631,9 +646,22 @@ class SamWidget(QWidget):
         if self.annotator_mode == AnnotatorMode.CLICK:
             self.btn_mode_switch.setText("Switch to Click Mode")
             self.annotator_mode = AnnotatorMode.BBOX
+            self.rb_semantic.setEnabled(False)
+            self.rb_semantic.setChecked(False)
+            self.rb_instance.setChecked(True)
+            self.rb_semantic.setStyleSheet("color: gray")
+            self.prev_segmentation_mode = self.segmentation_mode
+            self.segmentation_mode = SegmentationMode.INSTANCE
         else:
             self.btn_mode_switch.setText("Switch to BBox Mode")
             self.annotator_mode = AnnotatorMode.CLICK
+            self.rb_semantic.setEnabled(True)
+            self.rb_semantic.setStyleSheet("")
+            self.segmentation_mode = self.prev_segmentation_mode
+            if self.segmentation_mode == SegmentationMode.SEMANTIC:
+                self.rb_semantic.setChecked(True)
+            else:
+                self.rb_instance.setChecked(True)
 
     def create_label_color_mapping(self, num_labels=1000):
         if self.label_layer is not None:
@@ -850,7 +878,9 @@ class SamWidget(QWidget):
             self.label_layer.data = label_layer
             self.old_points = copy.deepcopy(self.points_layer.data)
             # self.label_layer.refresh()
-            self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
     def predict_sam(self, points, labels, bbox, x_coord=None):
         if self.image_layer.ndim == 2:
@@ -860,8 +890,10 @@ class SamWidget(QWidget):
             if bbox is not None:
                 # bbox = [np.flip(bbox[0, ...]), np.flip(bbox[2, ...])]
                 top_left_coord, bottom_right_coord = self.find_corners(bbox)
-                bbox = [top_left_coord, bottom_right_coord]
+                bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
+                # bbox = [bottom_right_coord, top_left_coord]
                 bbox = np.asarray(bbox).flatten()
+                # crop = self.image_layer.data[slicer(self.image_layer.data, [[top_left_coord[0], bottom_right_coord[0]], [top_left_coord[1], bottom_right_coord[1]]])]
             self.sam_predictor.features = self.sam_features
             prediction, _, self.sam_logits = self.sam_predictor.predict(
                 point_coords=points,
@@ -1049,14 +1081,17 @@ class SamWidget(QWidget):
         coords = np.array(coords)
 
         # find the indices of the leftmost, rightmost, topmost, and bottommost coordinates
-        left_idx = np.argmin(coords[:, 0])
-        right_idx = np.argmax(coords[:, 0])
-        top_idx = np.argmin(coords[:, 1])
-        bottom_idx = np.argmax(coords[:, 1])
+        left_idx = np.min(coords[:, 0])
+        right_idx = np.max(coords[:, 0])
+        top_idx = np.min(coords[:, 1])
+        bottom_idx = np.max(coords[:, 1])
 
         # determine the top left and bottom right coordinates
-        top_left_coord = coords[top_idx, :] if left_idx != top_idx else coords[right_idx, :]
-        bottom_right_coord = coords[bottom_idx, :] if right_idx != bottom_idx else coords[left_idx, :]
+        # top_left_coord = coords[top_idx, :] if left_idx != top_idx else coords[right_idx, :]
+        # bottom_right_coord = coords[bottom_idx, :] if right_idx != bottom_idx else coords[left_idx, :]
+
+        top_left_coord = [left_idx, top_idx]
+        bottom_right_coord = [right_idx, bottom_idx]
 
         return top_left_coord, bottom_right_coord
 
