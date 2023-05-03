@@ -10,7 +10,7 @@ from collections import deque, defaultdict
 import inspect
 from segment_anything import SamPredictor, sam_model_registry
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
-from napari_sam.utils import get_weights_path, get_cached_weight_types, normalize
+from napari_sam.utils import normalize
 import torch
 from vispy.util.keys import CONTROL
 import copy
@@ -18,6 +18,10 @@ import warnings
 from tqdm import tqdm
 from superqt.utils import qdebounced
 from napari_sam.slicer import slicer
+import urllib.request
+from pathlib import Path
+import os
+from os.path import join
 
 
 class AnnotatorMode(Enum):
@@ -36,6 +40,14 @@ class BboxState(Enum):
     CLICK = 0
     DRAG = 1
     RELEASE = 2
+
+
+SAM_WEIGHTS_URL = {
+    "default": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+    "vit_h": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+    "vit_l": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+    "vit_b": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+}
 
 
 class SamWidget(QWidget):
@@ -72,7 +84,7 @@ class SamWidget(QWidget):
         self.btn_load_model = QPushButton("Load model")
         self.btn_load_model.clicked.connect(self._load_model)
         main_layout.addWidget(self.btn_load_model)
-        self.is_model_loaded = False
+        self.loaded_model = None
         self.init_model_type_combobox()
 
         l_image_layer = QLabel("Select input image layer:")
@@ -397,14 +409,15 @@ class SamWidget(QWidget):
 
     def init_model_type_combobox(self):
         model_types = list(sam_model_registry.keys())
-        cached_weight_types = get_cached_weight_types(model_types)
-        entries = []
-        for name, is_cached in cached_weight_types.items():
-            if is_cached:
-                entries.append("{} (Cached)".format(name))
-            else:
-                entries.append("{} (Auto-Download)".format(name))
-        self.cb_model_type.addItems(entries)
+        cached_weight_types = self.get_cached_weight_types(model_types)
+        # entries = []
+        # for name, is_cached in cached_weight_types.items():
+        #     if is_cached:
+        #         entries.append("{} (Cached)".format(name))
+        #     else:
+        #         entries.append("{} (Auto-Download)".format(name))
+        # self.cb_model_type.addItems(entries)
+        self.update_model_type_combobox()
 
         if cached_weight_types[list(cached_weight_types.keys())[self.cb_model_type.currentIndex()]]:
             self.btn_load_model.setText("Load model")
@@ -413,9 +426,27 @@ class SamWidget(QWidget):
 
         self.cb_model_type.currentTextChanged.connect(self.on_model_type_combobox_change)
 
+    def update_model_type_combobox(self):
+        model_types = list(sam_model_registry.keys())
+        cached_weight_types = self.get_cached_weight_types(model_types)
+        entries = []
+        for name, is_cached in cached_weight_types.items():
+            if name == self.loaded_model:
+                entries.append("{} (Loaded)".format(name))
+            elif is_cached:
+                entries.append("{} (Cached)".format(name))
+            else:
+                entries.append("{} (Auto-Download)".format(name))
+        self.cb_model_type.clear()
+        self.cb_model_type.addItems(entries)
+        if self.loaded_model is not None:
+            loaded_model_index = self.cb_model_type.findText("{} (Loaded)".format(self.loaded_model))
+            self.cb_model_type.setCurrentIndex(loaded_model_index)
+
+
     def on_model_type_combobox_change(self):
         model_types = list(sam_model_registry.keys())
-        cached_weight_types = get_cached_weight_types(model_types)
+        cached_weight_types = self.get_cached_weight_types(model_types)
 
         if cached_weight_types[list(cached_weight_types.keys())[self.cb_model_type.currentIndex()]]:
             self.btn_load_model.setText("Load model")
@@ -486,20 +517,25 @@ class SamWidget(QWidget):
             self._deactivate()
 
     def _check_activate_btn(self):
-        if self.cb_image_layers.currentText() != "" and self.cb_label_layers.currentText() != "" and self.is_model_loaded:
+        if self.cb_image_layers.currentText() != "" and self.cb_label_layers.currentText() != "" and self.loaded_model is not None:
             self.btn_activate.setEnabled(True)
         else:
             self.btn_activate.setEnabled(False)
 
     def _load_model(self):
+        self.cb_model_type.setEnabled(False)
+        self.btn_load_model.setEnabled(False)
         model_types = list(sam_model_registry.keys())
         model_type = model_types[self.cb_model_type.currentIndex()]
         self.sam_model = sam_model_registry[model_type](
-            get_weights_path(model_type)
+            self.get_weights_path(model_type)
         )
         self.sam_model.to(self.device)
         self.sam_predictor = SamPredictor(self.sam_model)
-        self.is_model_loaded = True
+        self.loaded_model = model_type
+        self.update_model_type_combobox()
+        self.cb_model_type.setEnabled(True)
+        self.btn_load_model.setEnabled(True)
         self._check_activate_btn()
 
     def _activate(self):
@@ -1172,6 +1208,67 @@ class SamWidget(QWidget):
             self._redo_history, self._undo_history, undoing=False
         )
         raise RuntimeError("Redo currently not supported.")
+
+    def download_with_progress(self, url, output_file):
+        # Open the URL and get the content length
+        req = urllib.request.urlopen(url)
+        content_length = int(req.headers.get('Content-Length'))
+
+        l_creating_features = QLabel("Downloading model:")
+        self.layout().addWidget(l_creating_features)
+        progress_bar = QProgressBar(self)
+        progress_bar.setMaximum(int(content_length / 1024))
+        progress_bar.setValue(0)
+        self.layout().addWidget(progress_bar)
+
+        # Set up the progress bar
+        progress_bar_tqdm = tqdm(total=content_length, unit='B', unit_scale=True, desc="Downloading model")
+
+        # Download the file and update the progress bar
+        with open(output_file, 'wb') as f:
+            downloaded_bytes = 0
+            while True:
+                buffer = req.read(8192)
+                if not buffer:
+                    break
+                downloaded_bytes += len(buffer)
+                f.write(buffer)
+                progress_bar_tqdm.update(len(buffer))
+                progress_bar.setValue(int(downloaded_bytes / 1024))
+                QApplication.processEvents()
+                progress_bar.deleteLater()
+                l_creating_features.deleteLater()
+
+        # Close the progress bar and the URL
+        progress_bar_tqdm.close()
+        req.close()
+
+    def get_weights_path(self, model_type):
+        weight_url = SAM_WEIGHTS_URL[model_type]
+
+        cache_dir = Path.home() / ".cache/napari-segment-anything"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        weight_path = cache_dir / weight_url.split("/")[-1]
+
+        if not weight_path.exists():
+            print("Downloading {} to {} ...".format(weight_url, weight_path))
+            self.download_with_progress(weight_url, weight_path)
+
+        return weight_path
+
+    def get_cached_weight_types(self, model_types):
+        cached_weight_types = {}
+        cache_dir = str(Path.home() / ".cache/napari-segment-anything")
+
+        for model_type in model_types:
+            model_type_name = os.path.basename(SAM_WEIGHTS_URL[model_type])
+            if os.path.isfile(join(cache_dir, model_type_name)):
+                cached_weight_types[model_type] = True
+            else:
+                cached_weight_types[model_type] = False
+
+        return cached_weight_types
 
     # def _myfilter(self, row, parent):
     #     return "<hidden>" not in self.viewer.layers[row].name
