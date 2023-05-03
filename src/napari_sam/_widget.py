@@ -1,4 +1,4 @@
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QSpacerItem, QSizePolicy
+from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
 from qtpy.QtGui import QIntValidator, QDoubleValidator
 # from napari_sam.QCollapsibleBox import QCollapsibleBox
 from qtpy import QtCore
@@ -177,6 +177,11 @@ class SamWidget(QWidget):
         self.btn_mode_switch.clicked.connect(self._switch_mode)
         self.btn_mode_switch.setEnabled(False)
         main_layout.addWidget(self.btn_mode_switch)
+
+        self.check_prev_mask = QCheckBox('Use previous SAM prediction (recommended)')
+        self.check_prev_mask.setEnabled(False)
+        self.check_prev_mask.setChecked(True)
+        main_layout.addWidget(self.check_prev_mask)
 
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
@@ -583,6 +588,7 @@ class SamWidget(QWidget):
                 self.cb_image_layers.setEnabled(False)
                 self.cb_label_layers.setEnabled(False)
                 self.btn_mode_switch.setEnabled(True)
+                self.check_prev_mask.setEnabled(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
                 selected_layer = None
@@ -653,6 +659,7 @@ class SamWidget(QWidget):
         self.cb_label_layers.setEnabled(True)
         self.btn_mode_switch.setEnabled(False)
         self.btn_mode_switch.setText("Switch to BBox Mode")
+        self.check_prev_mask.setEnabled(False)
         self.prev_segmentation_mode = SegmentationMode.SEMANTIC
         self.annotator_mode = AnnotatorMode.CLICK
         self.remove_all_widget_callbacks(self.viewer)
@@ -940,12 +947,15 @@ class SamWidget(QWidget):
                 # bbox = [bottom_right_coord, top_left_coord]
                 bbox = np.asarray(bbox).flatten()
                 # crop = self.image_layer.data[slicer(self.image_layer.data, [[top_left_coord[0], bottom_right_coord[0]], [top_left_coord[1], bottom_right_coord[1]]])]
+            logits = self.sam_logits
+            if not self.check_prev_mask.isChecked():
+                logits = None
             self.sam_predictor.features = self.sam_features
             prediction, _, self.sam_logits = self.sam_predictor.predict(
                 point_coords=points,
                 point_labels=labels,
                 box=bbox,
-                mask_input=self.sam_logits,
+                mask_input=logits,
                 multimask_output=False,
             )
             prediction = prediction[0]
@@ -959,10 +969,13 @@ class SamWidget(QWidget):
             group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
             group_points = [point[1:] for point in group_points]
             self.sam_predictor.features = self.sam_features[x_coord]
+            logits = self.sam_logits[x_coord]
+            if not self.check_prev_mask.isChecked():
+                logits = None
             prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
                 point_coords=np.flip(group_points, axis=-1),
                 point_labels=np.asarray(group_labels),
-                mask_input=self.sam_logits[x_coord],
+                mask_input=logits,
                 multimask_output=False,
             )
             prediction_yz = prediction_yz[0]
