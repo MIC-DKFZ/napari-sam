@@ -186,6 +186,29 @@ class SamWidget(QWidget):
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
 
+        self.g_size = QGroupBox("Point && Bounding Box Settings")
+        self.l_size = QVBoxLayout()
+
+        l_point_size = QLabel("Point Size:")
+        self.l_size.addWidget(l_point_size)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_point_size = QLineEdit()
+        self.le_point_size.setText("1")
+        self.le_point_size.setValidator(validator)
+        self.l_size.addWidget(self.le_point_size)
+
+        l_bbox_edge_width = QLabel("Bounding Box Edge Width:")
+        self.l_size.addWidget(l_bbox_edge_width)
+        validator = QIntValidator()
+        validator.setRange(0, 9999)
+        self.le_bbox_edge_width = QLineEdit()
+        self.le_bbox_edge_width.setText("1")
+        self.le_bbox_edge_width.setValidator(validator)
+        self.l_size.addWidget(self.le_bbox_edge_width)
+        self.g_size.setLayout(self.l_size)
+        container_layout_info.addWidget(self.g_size)
+
         self.g_info_tooltip = QGroupBox("Tooltip Information")
         self.l_info_tooltip = QVBoxLayout()
         self.label_info_tooltip = QLabel("Every mode shows further information when hovered over.")
@@ -236,8 +259,11 @@ class SamWidget(QWidget):
         self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
         self.old_points = np.zeros(0)
         self.point_size = 10
+        self.le_point_size.setText(str(self.point_size))
         self.bbox_layer = None
         self.bbox_layer_name = "Ignore this layer2"
+        self.bbox_edge_width = 10
+        self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
         self.init_comboboxes()
 
@@ -249,7 +275,7 @@ class SamWidget(QWidget):
         self.points = defaultdict(list)
         self.point_label = None
 
-        self.bboxes = {}
+        self.bboxes = defaultdict(list)
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
@@ -597,9 +623,23 @@ class SamWidget(QWidget):
                 self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
                 if selected_layer is not None:
                     self.viewer.layers.selection.active = selected_layer
+                if self.image_layer.ndim == 3:
+                    # This tries to fix the problem that the first drawn bbox is not visible. Fix does not really work though...
+                    self.update_bbox_layer({}, bbox_tmp=[[self.viewer.dims.current_step[0], 0, 0], [self.viewer.dims.current_step[0], 0, 10], [self.viewer.dims.current_step[0], 10, 10], [self.viewer.dims.current_step[0], 10, 0]])
                 self.bbox_layer.editable = False
                 self.bbox_first_coords = None
                 self.prev_segmentation_mode = SegmentationMode.SEMANTIC
+
+                if self.image_layer.ndim == 2:
+                    self.point_size = int(np.min(self.image_layer.data.shape[:2]) / 100)
+                    if self.point_size == 0:
+                        self.point_size = 1
+                    self.bbox_edge_width = 10
+                else:
+                    self.point_size = 2
+                    self.bbox_edge_width = 1
+                self.le_point_size.setText(str(self.point_size))
+                self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
             if self.rb_semantic.isChecked():
                 self.segmentation_mode = SegmentationMode.SEMANTIC
@@ -678,7 +718,7 @@ class SamWidget(QWidget):
         self.bbox_first_coords = None
         self.annotator_mode = AnnotatorMode.NONE
         self.points = defaultdict(list)
-        self.bboxes = {}
+        self.bboxes = defaultdict(list)
         self.point_label = None
         self.sam_logits = None
         self.rb_click.setEnabled(True)
@@ -893,7 +933,7 @@ class SamWidget(QWidget):
             if self.image_layer.ndim == 2:
                 bbox_tmp = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
             elif self.image_layer.ndim == 3:
-                raise RuntimeError("3D images for bbox mode are not supported.")
+                bbox_tmp = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], self.bbox_first_coords[1], coords[2]), coords, (self.bbox_first_coords[0], coords[1], self.bbox_first_coords[2])])
             else:
                 raise RuntimeError("Only 2D and 3D images are supported.")
             bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
@@ -901,21 +941,21 @@ class SamWidget(QWidget):
         else:
             self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
             if self.image_layer.ndim == 2:
+                x_coord = slice(None, None)
                 bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
+                new_label = np.max(self.label_layer.data) + 1
+                self.label_layer.selected_label = new_label
             elif self.image_layer.ndim == 3:
-                raise RuntimeError("3D images for bbox mode are not supported.")
+                x_coord = self.bbox_first_coords[0]
+                bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], self.bbox_first_coords[1], coords[2]), coords, (self.bbox_first_coords[0], coords[1], self.bbox_first_coords[2])])
+                new_label = self.label_layer.selected_label
             else:
                 raise RuntimeError("Only 2D and 3D images are supported.")
             bbox_final = np.rint(bbox_final).astype(np.int32)
-            new_label = np.max(self.label_layer.data) + 1
-            self.label_layer.selected_label = new_label
-            self.bboxes[new_label] = bbox_final
+            self.bboxes[new_label].append(bbox_final)
             self.update_bbox_layer(self.bboxes)
 
-            prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final))
-
-            # if self.image_layer.ndim == 2:
-            #     x_coord = slice(None, None)
+            prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final), x_coord=x_coord)
 
             label_layer = np.asarray(self.label_layer.data)
             changed_indices = np.where(prediction == 1)
@@ -931,9 +971,10 @@ class SamWidget(QWidget):
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
-            # Update the label here too. This way the label stays incremented when switching to click mode
-            new_label = np.max(self.label_layer.data) + 1
-            self.label_layer.selected_label = new_label
+            if self.image_layer.ndim == 2:
+                # Update the label here too. This way the label stays incremented when switching to click mode
+                new_label = np.max(self.label_layer.data) + 1
+                self.label_layer.selected_label = new_label
 
     def predict_sam(self, points, labels, bbox, x_coord=None):
         if self.image_layer.ndim == 2:
@@ -941,12 +982,9 @@ class SamWidget(QWidget):
                 points = np.flip(points, axis=-1)
                 labels = np.asarray(labels)
             if bbox is not None:
-                # bbox = [np.flip(bbox[0, ...]), np.flip(bbox[2, ...])]
                 top_left_coord, bottom_right_coord = self.find_corners(bbox)
                 bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
-                # bbox = [bottom_right_coord, top_left_coord]
                 bbox = np.asarray(bbox).flatten()
-                # crop = self.image_layer.data[slicer(self.image_layer.data, [[top_left_coord[0], bottom_right_coord[0]], [top_left_coord[1], bottom_right_coord[1]]])]
             logits = self.sam_logits
             if not self.check_prev_mask.isChecked():
                 logits = None
@@ -960,21 +998,29 @@ class SamWidget(QWidget):
             )
             prediction = prediction[0]
         elif self.image_layer.ndim == 3:
-            points = np.asarray(points)
-            x_coords = np.unique(points[:, 0])
-            groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
             prediction = np.zeros_like(self.label_layer.data)
-
-            group_points = groups[x_coord]
-            group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
-            group_points = [point[1:] for point in group_points]
+            if points is not None:
+                points = np.asarray(points)
+                x_coords = np.unique(points[:, 0])
+                groups = {x_coord: list(points[points[:, 0] == x_coord]) for x_coord in x_coords}  # Group points if they are on the same image slice
+                group_points = groups[x_coord]
+                group_labels = [labels[np.argwhere(np.all(points == point, axis=1)).flatten()[0]] for point in group_points]
+                group_points = [point[1:] for point in group_points]
+                points = np.flip(group_points, axis=-1)
+                labels = np.asarray(group_labels)
+            if bbox is not None:
+                bbox = bbox[:, 1:]
+                top_left_coord, bottom_right_coord = self.find_corners(bbox)
+                bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
+                bbox = np.asarray(bbox).flatten()
             self.sam_predictor.features = self.sam_features[x_coord]
             logits = self.sam_logits[x_coord]
             if not self.check_prev_mask.isChecked():
                 logits = None
             prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
-                point_coords=np.flip(group_points, axis=-1),
-                point_labels=np.asarray(group_labels),
+                point_coords=points,
+                point_labels=labels,
+                box=bbox,
                 mask_input=logits,
                 multimask_output=False,
             )
@@ -1050,6 +1096,7 @@ class SamWidget(QWidget):
         return prediction
 
     def update_points_layer(self, points):
+        self.point_size = int(self.le_point_size.text())
         selected_layer = None
         if self.viewer.layers.selection.active != self.points_layer:
             selected_layer = self.viewer.layers.selection.active
@@ -1065,9 +1112,6 @@ class SamWidget(QWidget):
                 colors = [color] * len(label_points)
                 colors_flattended.extend(colors)
 
-        self.point_size = int(np.min(self.image_layer.data.shape[:2]) / 100)
-        if self.point_size == 0:
-            self.point_size = 1
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
             self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, edge_color="white", size=self.point_size)
@@ -1078,16 +1122,17 @@ class SamWidget(QWidget):
         self.points_layer.refresh()
 
     def update_bbox_layer(self, bboxes, bbox_tmp=None):
+        self.bbox_edge_width = int(self.le_bbox_edge_width.text())
         bboxes_flattened = []
         edge_colors = []
         for _, bbox in bboxes.items():
-            bboxes_flattened.append(bbox)
-            edge_colors.append('skyblue')
+            bboxes_flattened.extend(bbox)
+            edge_colors.extend(['skyblue'] * len(bbox))
         if bbox_tmp is not None:
             bboxes_flattened.append(bbox_tmp)
             edge_colors.append('steelblue')
         self.bbox_layer.data = bboxes_flattened
-        self.bbox_layer.edge_width = [10] * len(bboxes_flattened)
+        self.bbox_layer.edge_width = [self.bbox_edge_width] * len(bboxes_flattened)
         self.bbox_layer.edge_color = edge_colors
         self.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
 
