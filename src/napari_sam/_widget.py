@@ -193,7 +193,8 @@ class SamWidget(QWidget):
                                  "Undo: Control + Z\n \n"
                                  "Select Point: Left Click\n \n"
                                  "Delete Selected Point: Delete\n \n"
-                                 "Pick Label: Control + Left Click\n \n")
+                                 "Pick Label: Control + Left Click\n \n"
+                                 "Increment Label: M\n \n")
         self.label_info_click.setWordWrap(True)
         self.l_info_click.addWidget(self.label_info_click)
         self.g_info_click.setLayout(self.l_info_click)
@@ -548,7 +549,12 @@ class SamWidget(QWidget):
                 self.btn_mode_switch.setEnabled(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
+                selected_layer = None
+                if self.viewer.layers.selection.active != self.points_layer:
+                    selected_layer = self.viewer.layers.selection.active
                 self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
+                if selected_layer is not None:
+                    self.viewer.layers.selection.active = selected_layer
                 self.bbox_layer.editable = False
                 self.bbox_first_coords = None
                 self.prev_segmentation_mode = SegmentationMode.SEMANTIC
@@ -881,6 +887,10 @@ class SamWidget(QWidget):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
+
+            # Update the label here too. This way the label stays incremented when switching to click mode
+            new_label = np.max(self.label_layer.data) + 1
+            self.label_layer.selected_label = new_label
 
     def predict_sam(self, points, labels, bbox, x_coord=None):
         if self.image_layer.ndim == 2:
