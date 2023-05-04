@@ -21,15 +21,14 @@ Everything mode             |  Click-based semantic segmentation mode |  Click-b
 :-------------------------:|:-------------------------:|:-------------------------:
 ![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_everything.png)  |  ![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_semantic.png)  |  ![](https://github.com/MIC-DKFZ/napari-sam/raw/main/cats_instance.png)
 
+
 ----------------------------------
 <h2 align="center">SAM in Napari demo</h2>
-<p align="center"><em>Click to play the video</em></p>
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=OPE1Xnw487E">
-    <img src="https://github.com/MIC-DKFZ/napari-sam/raw/main/thumpnail.jpeg" alt="SAM Demo">
-  </a>
-</div>
 
+https://user-images.githubusercontent.com/3471895/236152620-0de983db-954b-4480-97b9-901ee82f8edd.mp4
+
+</div>
 
 ----------------------------------
 
