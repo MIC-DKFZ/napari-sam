@@ -183,6 +183,11 @@ class SamWidget(QWidget):
         self.check_prev_mask.setChecked(True)
         main_layout.addWidget(self.check_prev_mask)
 
+        self.check_auto_inc_bbox= QCheckBox('Auto increment bounding box label')
+        self.check_auto_inc_bbox.setEnabled(False)
+        self.check_auto_inc_bbox.setChecked(True)
+        main_layout.addWidget(self.check_auto_inc_bbox)
+
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
 
@@ -615,6 +620,8 @@ class SamWidget(QWidget):
                 self.cb_label_layers.setEnabled(False)
                 self.btn_mode_switch.setEnabled(True)
                 self.check_prev_mask.setEnabled(True)
+                self.check_auto_inc_bbox.setEnabled(True)
+                self.check_auto_inc_bbox.setChecked(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
                 selected_layer = None
@@ -624,6 +631,7 @@ class SamWidget(QWidget):
                 if selected_layer is not None:
                     self.viewer.layers.selection.active = selected_layer
                 if self.image_layer.ndim == 3:
+                    self.check_auto_inc_bbox.setChecked(False)
                     # This tries to fix the problem that the first drawn bbox is not visible. Fix does not really work though...
                     self.update_bbox_layer({}, bbox_tmp=[[self.viewer.dims.current_step[0], 0, 0], [self.viewer.dims.current_step[0], 0, 10], [self.viewer.dims.current_step[0], 10, 10], [self.viewer.dims.current_step[0], 10, 0]])
                 self.bbox_layer.editable = False
@@ -700,6 +708,7 @@ class SamWidget(QWidget):
         self.btn_mode_switch.setEnabled(False)
         self.btn_mode_switch.setText("Switch to BBox Mode")
         self.check_prev_mask.setEnabled(False)
+        self.check_auto_inc_bbox.setEnabled(False)
         self.prev_segmentation_mode = SegmentationMode.SEMANTIC
         self.annotator_mode = AnnotatorMode.CLICK
         self.remove_all_widget_callbacks(self.viewer)
@@ -943,14 +952,17 @@ class SamWidget(QWidget):
             if self.image_layer.ndim == 2:
                 x_coord = slice(None, None)
                 bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
-                new_label = np.max(self.label_layer.data) + 1
-                self.label_layer.selected_label = new_label
             elif self.image_layer.ndim == 3:
                 x_coord = self.bbox_first_coords[0]
                 bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], self.bbox_first_coords[1], coords[2]), coords, (self.bbox_first_coords[0], coords[1], self.bbox_first_coords[2])])
-                new_label = self.label_layer.selected_label
             else:
                 raise RuntimeError("Only 2D and 3D images are supported.")
+
+            new_label = self.label_layer.selected_label
+            if self.check_auto_inc_bbox.isChecked():
+                new_label = np.max(self.label_layer.data) + 1
+                self.label_layer.selected_label = new_label
+
             bbox_final = np.rint(bbox_final).astype(np.int32)
             self.bboxes[new_label].append(bbox_final)
             self.update_bbox_layer(self.bboxes)
@@ -971,7 +983,7 @@ class SamWidget(QWidget):
                 warnings.filterwarnings("ignore", category=FutureWarning)
                 self.label_layer._save_history((self.label_layer_changes["indices"], self.label_layer_changes["old_values"], self.label_layer_changes["new_values"]))
 
-            if self.image_layer.ndim == 2:
+            if self.check_auto_inc_bbox.isChecked():
                 # Update the label here too. This way the label stays incremented when switching to click mode
                 new_label = np.max(self.label_layer.data) + 1
                 self.label_layer.selected_label = new_label
