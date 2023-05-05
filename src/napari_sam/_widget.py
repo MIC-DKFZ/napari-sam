@@ -8,7 +8,7 @@ import numpy as np
 from enum import Enum
 from collections import deque, defaultdict
 import inspect
-from segment_anything import SamPredictor, sam_model_registry
+from segment_anything import SamPredictor, build_sam_vit_h, build_sam_vit_l, build_sam_vit_b
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
 from napari_sam.utils import normalize
 import torch
@@ -41,12 +41,12 @@ class BboxState(Enum):
     DRAG = 1
     RELEASE = 2
 
-
-SAM_WEIGHTS_URL = {
-    "default": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
-    "vit_h": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
-    "vit_l": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
-    "vit_b": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+SAM_MODELS = {
+    "default": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
+    "vit_h": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
+    "vit_l": {"filename": "sam_vit_l_0b3195.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth", "model": build_sam_vit_l},
+    "vit_b": {"filename": "sam_vit_b_01ec64.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth", "model": build_sam_vit_b},
+    "MedSAM": {"filename": "sam_vit_b_01ec64_medsam.pth", "url": "https://syncandshare.desy.de/index.php/s/yLfdFbpfEGSHJWY/download/medsam_20230423_vit_b_0.0.1.pth", "model": build_sam_vit_b},
 }
 
 
@@ -444,7 +444,7 @@ class SamWidget(QWidget):
         pass
 
     def init_model_type_combobox(self):
-        model_types = list(sam_model_registry.keys())
+        model_types = list(SAM_MODELS.keys())
         cached_weight_types = self.get_cached_weight_types(model_types)
         # entries = []
         # for name, is_cached in cached_weight_types.items():
@@ -463,7 +463,7 @@ class SamWidget(QWidget):
         self.cb_model_type.currentTextChanged.connect(self.on_model_type_combobox_change)
 
     def update_model_type_combobox(self):
-        model_types = list(sam_model_registry.keys())
+        model_types = list(SAM_MODELS.keys())
         cached_weight_types = self.get_cached_weight_types(model_types)
         entries = []
         for name, is_cached in cached_weight_types.items():
@@ -481,7 +481,7 @@ class SamWidget(QWidget):
 
 
     def on_model_type_combobox_change(self):
-        model_types = list(sam_model_registry.keys())
+        model_types = list(SAM_MODELS.keys())
         cached_weight_types = self.get_cached_weight_types(model_types)
 
         if cached_weight_types[list(cached_weight_types.keys())[self.cb_model_type.currentIndex()]]:
@@ -561,9 +561,9 @@ class SamWidget(QWidget):
     def _load_model(self):
         self.cb_model_type.setEnabled(False)
         self.btn_load_model.setEnabled(False)
-        model_types = list(sam_model_registry.keys())
+        model_types = list(SAM_MODELS.keys())
         model_type = model_types[self.cb_model_type.currentIndex()]
-        self.sam_model = sam_model_registry[model_type](
+        self.sam_model = SAM_MODELS[model_type]["model"](
             self.get_weights_path(model_type)
         )
         self.sam_model.to(self.device)
@@ -1314,12 +1314,12 @@ class SamWidget(QWidget):
         req.close()
 
     def get_weights_path(self, model_type):
-        weight_url = SAM_WEIGHTS_URL[model_type]
+        weight_url = SAM_MODELS[model_type]["url"]
 
         cache_dir = Path.home() / ".cache/napari-segment-anything"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        weight_path = cache_dir / weight_url.split("/")[-1]
+        weight_path = cache_dir / SAM_MODELS[model_type]["filename"]
 
         if not weight_path.exists():
             print("Downloading {} to {} ...".format(weight_url, weight_path))
@@ -1332,8 +1332,8 @@ class SamWidget(QWidget):
         cache_dir = str(Path.home() / ".cache/napari-segment-anything")
 
         for model_type in model_types:
-            model_type_name = os.path.basename(SAM_WEIGHTS_URL[model_type])
-            if os.path.isfile(join(cache_dir, model_type_name)):
+            filename = os.path.basename(SAM_MODELS[model_type]["filename"])
+            if os.path.isfile(join(cache_dir, filename)):
                 cached_weight_types[model_type] = True
             else:
                 cached_weight_types[model_type] = False
