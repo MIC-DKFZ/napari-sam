@@ -581,6 +581,23 @@ class SamWidget(QWidget):
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
             self.label_layer_changes = None
+            # Fixes shape adjustment by napari
+            self.image_layer_affine_scale = self.image_layer.affine.scale
+            self.image_layer_scale = self.image_layer.scale
+            self.image_layer_scale_factor = self.image_layer.scale_factor
+            self.label_layer_affine_scale = self.label_layer.affine.scale
+            self.label_layer_scale = self.label_layer.scale
+            self.label_layer_scale_factor = self.label_layer.scale_factor
+            self.image_layer.affine.scale = np.array([1, 1, 1])
+            self.image_layer.scale = np.array([1, 1, 1])
+            self.image_layer.scale_factor = 1
+            self.label_layer.affine.scale = np.array([1, 1, 1])
+            self.label_layer.scale = np.array([1, 1, 1])
+            self.label_layer.scale_factor = 1
+            pos = self.viewer.dims.point
+            self.viewer.dims.set_point(0, 0)
+            self.viewer.dims.set_point(0, pos[0])
+            self.viewer.reset_view()
 
             if self.image_layer.ndim != 2 and self.image_layer.ndim != 3:
                 raise RuntimeError("Only 2D and 3D images are supported.")
@@ -632,8 +649,11 @@ class SamWidget(QWidget):
                     self.viewer.layers.selection.active = selected_layer
                 if self.image_layer.ndim == 3:
                     self.check_auto_inc_bbox.setChecked(False)
-                    # This tries to fix the problem that the first drawn bbox is not visible. Fix does not really work though...
+                    # This "fixes" the problem that the first drawn bbox is not visible.
                     self.update_bbox_layer({}, bbox_tmp=[[self.viewer.dims.current_step[0], 0, 0], [self.viewer.dims.current_step[0], 0, 10], [self.viewer.dims.current_step[0], 10, 10], [self.viewer.dims.current_step[0], 10, 0]])
+                    self.update_bbox_layer({}, bbox_tmp=None)
+                    self.viewer.dims.set_point(0, 0)
+                    self.viewer.dims.set_point(0, pos[0])
                 self.bbox_layer.editable = False
                 self.bbox_first_coords = None
                 self.prev_segmentation_mode = SegmentationMode.SEMANTIC
@@ -711,6 +731,17 @@ class SamWidget(QWidget):
         self.check_auto_inc_bbox.setEnabled(False)
         self.prev_segmentation_mode = SegmentationMode.SEMANTIC
         self.annotator_mode = AnnotatorMode.CLICK
+
+        # Undo: Fixes shape adjustment by napari  # TODO: Not working correctly atm
+        # self.image_layer.affine.scale = self.image_layer_affine_scale
+        # self.image_layer.scale = self.image_layer_scale
+        # self.image_layer.scale_factor = self.image_layer_scale_factor
+        # self.label_layer.affine.scale = self.label_layer_affine_scale
+        # self.label_layer.scale = self.label_layer_scale
+        # self.label_layer.scale_factor = self.label_layer_scale_factor
+        # self.image_layer.refresh()
+        # self.label_layer.refresh()
+
         self.remove_all_widget_callbacks(self.viewer)
         if self.label_layer is not None:
             self.remove_all_widget_callbacks(self.label_layer)
