@@ -582,22 +582,23 @@ class SamWidget(QWidget):
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
             self.label_layer_changes = None
             # Fixes shape adjustment by napari
-            self.image_layer_affine_scale = self.image_layer.affine.scale
-            self.image_layer_scale = self.image_layer.scale
-            self.image_layer_scale_factor = self.image_layer.scale_factor
-            self.label_layer_affine_scale = self.label_layer.affine.scale
-            self.label_layer_scale = self.label_layer.scale
-            self.label_layer_scale_factor = self.label_layer.scale_factor
-            self.image_layer.affine.scale = np.array([1, 1, 1])
-            self.image_layer.scale = np.array([1, 1, 1])
-            self.image_layer.scale_factor = 1
-            self.label_layer.affine.scale = np.array([1, 1, 1])
-            self.label_layer.scale = np.array([1, 1, 1])
-            self.label_layer.scale_factor = 1
-            pos = self.viewer.dims.point
-            self.viewer.dims.set_point(0, 0)
-            self.viewer.dims.set_point(0, pos[0])
-            self.viewer.reset_view()
+            if self.image_layer.ndim == 3:
+                self.image_layer_affine_scale = self.image_layer.affine.scale
+                self.image_layer_scale = self.image_layer.scale
+                self.image_layer_scale_factor = self.image_layer.scale_factor
+                self.label_layer_affine_scale = self.label_layer.affine.scale
+                self.label_layer_scale = self.label_layer.scale
+                self.label_layer_scale_factor = self.label_layer.scale_factor
+                self.image_layer.affine.scale = np.array([1, 1, 1])
+                self.image_layer.scale = np.array([1, 1, 1])
+                self.image_layer.scale_factor = 1
+                self.label_layer.affine.scale = np.array([1, 1, 1])
+                self.label_layer.scale = np.array([1, 1, 1])
+                self.label_layer.scale_factor = 1
+                pos = self.viewer.dims.point
+                self.viewer.dims.set_point(0, 0)
+                self.viewer.dims.set_point(0, pos[0])
+                self.viewer.reset_view()
 
             if self.image_layer.ndim != 2 and self.image_layer.ndim != 3:
                 raise RuntimeError("Only 2D and 3D images are supported.")
