@@ -614,12 +614,12 @@ class SamWidget(QWidget):
                 self.rb_auto.setEnabled(False)
                 # self.rb_bbox.setStyleSheet("color: gray")
                 self.rb_auto.setStyleSheet("color: gray")
-            elif self.rb_bbox.isChecked():
-                self.annotator_mode = AnnotatorMode.BBOX
-                self.rb_click.setEnabled(False)
-                self.rb_auto.setEnabled(False)
-                self.rb_click.setStyleSheet("color: gray")
-                self.rb_auto.setStyleSheet("color: gray")
+            # elif self.rb_bbox.isChecked():
+            #     self.annotator_mode = AnnotatorMode.BBOX
+            #     self.rb_click.setEnabled(False)
+            #     self.rb_auto.setEnabled(False)
+            #     self.rb_click.setStyleSheet("color: gray")
+            #     self.rb_auto.setStyleSheet("color: gray")
             elif self.rb_auto.isChecked():
                 self.annotator_mode = AnnotatorMode.AUTO
                 self.rb_click.setEnabled(False)
