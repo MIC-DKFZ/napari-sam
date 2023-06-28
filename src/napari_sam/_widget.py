@@ -886,7 +886,7 @@ class SamWidget(QWidget):
             image = image[..., :3]  # Remove a potential alpha channel
             if image.dtype != np.uint8:
                 contrast_limits = self.image_layer.contrast_limits
-                image_slice = normalize(image_slice, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
+                image = normalize(image, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
             self.sam_predictor.set_image(image)
             self.sam_features = self.sam_predictor.features
         elif self.image_layer.ndim == 3:
