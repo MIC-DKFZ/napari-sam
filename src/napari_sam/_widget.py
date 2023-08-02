@@ -1,6 +1,5 @@
 from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
 from qtpy.QtGui import QIntValidator, QDoubleValidator
-# from napari_sam.QCollapsibleBox import QCollapsibleBox
 from qtpy import QtCore
 from qtpy.QtCore import Qt
 import napari
@@ -288,7 +287,6 @@ class SamWidget(QWidget):
         container_widget_auto = QWidget()
         container_layout_auto = QVBoxLayout(container_widget_auto)
 
-        # self.g_auto_mode_settings = QCollapsibleBox("Everything Mode Settings")
         self.g_auto_mode_settings = QGroupBox("Everything Mode Settings")
         self.l_auto_mode_settings = QVBoxLayout()
 
