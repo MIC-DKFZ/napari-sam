@@ -1,3 +1,4 @@
+import datetime
 from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
 from qtpy.QtGui import QIntValidator, QDoubleValidator
 from qtpy import QtCore
@@ -29,16 +30,16 @@ class AnnotatorMode(Enum):
     BBOX = 2
     AUTO = 3
 
-
 class SegmentationMode(Enum):
     SEMANTIC = 0
     INSTANCE = 1
-
 
 class BboxState(Enum):
     CLICK = 0
     DRAG = 1
     RELEASE = 2
+
+ANNOT_CLASSES = ["beads", "tubule", "distal", "glom", "graft"]
 
 SAM_MODELS = {
     "default": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
@@ -48,6 +49,84 @@ SAM_MODELS = {
     "MedSAM": {"filename": "sam_vit_b_01ec64_medsam.pth", "url": "https://syncandshare.desy.de/index.php/s/yLfdFbpfEGSHJWY/download/medsam_20230423_vit_b_0.0.1.pth", "model": build_sam_vit_b},
 }
 
+
+class SamManager():  ##TODO Makes this outside class
+    def __init__(self):
+        self.image_basename = None
+        self.channels = None
+        self.z_stack_id = None
+        self.max_z_in_stack = 100
+        self.embedding_fp = r'G:\Group-Little_MCRI\People\Thanushi\projects\annotation-tool\SAM pipeline\SAM embeddings'
+        self.features = None
+        self.model = None
+        self.predictor = None
+        self.logits = None
+        self.features = None
+
+    def generate_embedding(self, samwidget, samwidget_image_basename):
+        self.image_basename = samwidget_image_basename
+        #self.channels = samwidget.channels
+
+        # use presaved embedding if it exists
+        self.z_stack_id = samwidget.viewer.dims.current_step[0] // self.max_z_in_stack
+        z = self.z(samwidget)
+        embedding_fname = f"{self.image_basename}_zmax{self.max_z_in_stack}-zstack{self.z_stack_id}.pt"
+        presaved = os.path.join(self.embedding_fp, embedding_fname)
+        if os.path.exists(presaved):
+            print("  using presaved")
+            self.features = torch.load(presaved,
+                                       map_location=f'cuda:{torch.cuda.current_device()}')
+            # TODO make above work no matter if it's running on cpu...?
+            # [f.to(torch.cuda.device(torch.cuda.current_device())) for f in torch.load(presaved)]
+            self.predictor.features = self.features[z]
+            image_slice = samwidget.image_layer.data[z, ...]
+            # TODO save pickle file and load here instead of assuming original and input size same
+            self.predictor.original_size = image_slice.shape
+            self.predictor.input_size = image_slice.shape
+            self.predictor.is_image_set = True
+
+            self.start_z = self.z_stack_id * self.max_z_in_stack
+            self.end_z = (self.z_stack_id + 1) * self.max_z_in_stack - 1
+
+        else:
+            # create embedding
+            l_creating_features = QLabel("Creating SAM image embedding:")
+            samwidget.layout().addWidget(l_creating_features)
+            progress_bar = QProgressBar(samwidget)
+            progress_bar.setMaximum(samwidget.image_layer.data.shape[0])
+            progress_bar.setValue(0)
+            samwidget.layout().addWidget(progress_bar)
+            self.features = []
+            for index in tqdm(range(samwidget.image_layer.data.shape[0]),
+                              desc="Creating SAM image embedding"):
+                image_slice = np.asarray(samwidget.image_layer.data[index, ...])
+                if not samwidget.image_layer.rgb:
+                    image_slice = np.stack((image_slice,) * 3,
+                                           axis=-1)  # Expand to 3-channel image
+                image_slice = image_slice[...,
+                              :3]  # Remove a potential alpha channel
+                contrast_limits = samwidget.image_layer.contrast_limits
+                image_slice = normalize(image_slice,
+                                        source_limits=contrast_limits,
+                                        target_limits=(0, 255)).astype(
+                    np.uint8)
+                self.predictor.set_image(image_slice)
+                # TODO does it matter that setting image on last slice
+                self.features.append(self.predictor.features)
+                progress_bar.setValue(index + 1)
+                QApplication.processEvents()
+                progress_bar.deleteLater()
+                l_creating_features.deleteLater()
+
+    def check_set(self, samwidget):
+        samwidget_image_basename = os.path.splitext(os.path.basename(samwidget.image_layer.source.path))[0]
+        if samwidget_image_basename != self.image_basename:
+            self.generate_embedding(samwidget, samwidget_image_basename)
+        if not (self.start_z <= samwidget.viewer.dims.current_step[0] <= self.end_z):
+            self.generate_embedding(samwidget, samwidget_image_basename)
+
+    def z(self, samwidget):
+        return samwidget.viewer.dims.current_step[0] - self.max_z_in_stack*self.z_stack_id
 
 class SamWidget(QWidget):
     def __init__(self, napari_viewer):
@@ -269,12 +348,12 @@ class SamWidget(QWidget):
         self.bbox_edge_width = 10
         self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
-        self.init_comboboxes()
 
-        self.sam_model = None
-        self.sam_predictor = None
-        self.sam_logits = None
-        self.sam_features = None
+
+        self.init_comboboxes()
+        self.sam = SamManager()
+        self.viewer.layers.selection.events.active.connect(self._select_labels_layer)
+        self.adding_multiple_labels = False
 
         self.points = defaultdict(list)
         self.point_label = None
@@ -282,6 +361,41 @@ class SamWidget(QWidget):
         self.bboxes = defaultdict(list)
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+
+    def _select_labels_layer(self):
+        """
+        Triggered whenever different layer is selected. If it's a labels layer, will
+        change the widget labels layer for model input.
+        :return:
+        """
+        current_layer = self.viewer.layers.selection.active
+        if isinstance(current_layer, napari.layers.Labels) and \
+                (current_layer.name != self.cb_label_layers.currentText()):
+            # deactivate if active
+            if self.is_active:
+                self._deactivate()
+            # switch output to that labels layer
+            self.cb_label_layers.setCurrentText(current_layer.name)
+
+            # activate if not yet active and not adding initial set of layers
+            if (not self.is_active) and (not self.adding_multiple_labels):
+                self._activate()
+
+    def select_layer_while_active(self, layer):
+        """
+        This function avoids triggering switching model to different label output
+        layer when a labels layer is selected by the code instead of the person
+        when the widget annotation is active
+        :param layer: layer to be set to active
+        """
+        # WARNING: be careful when changing is_active type to not be a boolean
+        # or hooking events up to it as it gets temporarily switched to False
+        # when a layer needs to be selected during widget annotation activation.
+        original_active_status = self.is_active
+        if self.is_active:
+            self.is_active = False
+        self.viewer.layers.selection.active = layer
+        self.is_active = original_active_status
 
     def init_auto_mode_settings(self):
         container_widget_auto = QWidget()
@@ -561,16 +675,23 @@ class SamWidget(QWidget):
         self.btn_load_model.setEnabled(False)
         model_types = list(SAM_MODELS.keys())
         model_type = model_types[self.cb_model_type.currentIndex()]
-        self.sam_model = SAM_MODELS[model_type]["model"](
+        self.sam.model = SAM_MODELS[model_type]["model"](
             self.get_weights_path(model_type)
         )
-        self.sam_model.to(self.device)
-        self.sam_predictor = SamPredictor(self.sam_model)
+        self.sam.model.to(self.device)
+        self.sam.predictor = SamPredictor(self.sam.model)
         self.loaded_model = model_type
         self.update_model_type_combobox()
         self.cb_model_type.setEnabled(True)
         self.btn_load_model.setEnabled(True)
         self._check_activate_btn()
+
+        self.adding_multiple_labels = True
+        for name in ANNOT_CLASSES:
+            current_image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
+            self.viewer.add_labels(np.zeros(current_image_layer.data.shape,
+                                            dtype='uint8'), name=name)
+        self.adding_multiple_labels = False
 
     def _activate(self):
         self.btn_activate.setEnabled(False)
@@ -602,9 +723,9 @@ class SamWidget(QWidget):
                 raise RuntimeError("Only 2D and 3D images are supported.")
 
             if self.image_layer.ndim == 2:
-                self.sam_logits = None
+                self.sam.logits = None
             else:
-                self.sam_logits = [None] * self.image_layer.data.shape[0]
+                self.sam.logits = [None] * self.image_layer.data.shape[0]
 
             if self.rb_click.isChecked():
                 self.annotator_mode = AnnotatorMode.CLICK
@@ -626,7 +747,6 @@ class SamWidget(QWidget):
                 # self.rb_bbox.setStyleSheet("color: gray")
             else:
                 raise RuntimeError("Annotator mode not implemented.")
-
             if self.annotator_mode != AnnotatorMode.AUTO:
                 self.is_active = True
                 self.btn_activate.setText("Deactivate")
@@ -640,12 +760,17 @@ class SamWidget(QWidget):
                 self.check_auto_inc_bbox.setChecked(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
+
+                # add bbox layer while retaining same selected layer
                 selected_layer = None
                 if self.viewer.layers.selection.active != self.points_layer:
                     selected_layer = self.viewer.layers.selection.active
-                self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
+                self.bbox_layer = self.viewer.add_shapes(
+                    name=self.bbox_layer_name)
                 if selected_layer is not None:
-                    self.viewer.layers.selection.active = selected_layer
+                    # must change layer when self.is_active = False otherwise will trigger _select_labels_layer that will deactivate
+                    self.select_layer_while_active(selected_layer)
+
                 if self.image_layer.ndim == 3:
                     self.check_auto_inc_bbox.setChecked(False)
                     # This "fixes" the problem that the first drawn bbox is not visible.
@@ -698,7 +823,7 @@ class SamWidget(QWidget):
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
 
             elif self.annotator_mode == AnnotatorMode.AUTO:
-                self.sam_anything_predictor = SamAutomaticMaskGenerator(self.sam_model,
+                self.sam_anything_predictor = SamAutomaticMaskGenerator(self.sam.model,
                                                                         points_per_side=int(self.le_points_per_side.text()),
                                                                         points_per_batch=int(self.le_points_per_batch.text()),
                                                                         pred_iou_thresh=float(self.le_pred_iou_thresh.text()),
@@ -759,7 +884,7 @@ class SamWidget(QWidget):
         self.points = defaultdict(list)
         self.bboxes = defaultdict(list)
         self.point_label = None
-        self.sam_logits = None
+        self.sam.logits = None
         self.rb_click.setEnabled(True)
         self.rb_auto.setEnabled(True)
         self.rb_click.setStyleSheet("")
@@ -842,7 +967,7 @@ class SamWidget(QWidget):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
             self.points_layer.data = np.delete(self.points_layer.data, selected_points[0], axis=0)
-            self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
+            self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam.logits, "point_label": self.point_label})
             deleted_point, _ = self.find_changed_point(self.old_points, self.points_layer.data)
             label = self.find_point_label(deleted_point)
             index_to_remove = np.where((self.points[label] == deleted_point).all(axis=1))[0]
@@ -851,9 +976,9 @@ class SamWidget(QWidget):
                 del self.points[label]
             self.point_label = label
             if self.image_layer.ndim == 2:
-                self.sam_logits = None
+                self.sam.logits = None
             elif self.image_layer.ndim == 3:
-                self.sam_logits[deleted_point[0]] = None
+                self.sam.logits[deleted_point[0]] = None
             else:
                 raise RuntimeError("Point deletion not implemented for this dimensionality.")
             self.predict_click(self.points, self.point_label, deleted_point, label)
@@ -876,6 +1001,7 @@ class SamWidget(QWidget):
     def on_contrast_limits_change(self):
         self.set_image()
 
+
     def set_image(self):
         if self.image_layer.ndim == 2:
             image = np.asarray(self.image_layer.data)
@@ -885,29 +1011,11 @@ class SamWidget(QWidget):
             if image.dtype != np.uint8:
                 contrast_limits = self.image_layer.contrast_limits
                 image = normalize(image, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
-            self.sam_predictor.set_image(image)
-            self.sam_features = self.sam_predictor.features
+            self.sam.predictor.set_image(image)
+            self.sam.features = self.self.sam.predictor.features
         elif self.image_layer.ndim == 3:
-            l_creating_features= QLabel("Creating SAM image embedding:")
-            self.layout().addWidget(l_creating_features)
-            progress_bar = QProgressBar(self)
-            progress_bar.setMaximum(self.image_layer.data.shape[0])
-            progress_bar.setValue(0)
-            self.layout().addWidget(progress_bar)
-            self.sam_features = []
-            for index in tqdm(range(self.image_layer.data.shape[0]), desc="Creating SAM image embedding"):
-                image_slice = np.asarray(self.image_layer.data[index, ...])
-                if not self.image_layer.rgb:
-                    image_slice = np.stack((image_slice,) * 3, axis=-1)  # Expand to 3-channel image
-                image_slice = image_slice[..., :3]  # Remove a potential alpha channel
-                contrast_limits = self.image_layer.contrast_limits
-                image_slice = normalize(image_slice, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
-                self.sam_predictor.set_image(image_slice)
-                self.sam_features.append(self.sam_predictor.features)
-                progress_bar.setValue(index+1)
-                QApplication.processEvents()
-                progress_bar.deleteLater()
-                l_creating_features.deleteLater()
+            self.sam.check_set(self)
+
         else:
             raise RuntimeError("Only 2D and 3D images are supported.")
 
@@ -918,7 +1026,7 @@ class SamWidget(QWidget):
                 warnings.warn("There is already a point in this location. This click will be ignored.")
                 return
 
-        self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
+        self._save_history({"mode": AnnotatorMode.CLICK, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam.logits, "point_label": self.point_label})
 
         self.point_label = self.label_layer.selected_label
         if not is_positive:
@@ -981,7 +1089,7 @@ class SamWidget(QWidget):
             bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
             self.update_bbox_layer(self.bboxes, bbox_tmp=bbox_tmp)
         else:
-            self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
+            self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam.logits, "point_label": self.point_label})
             if self.image_layer.ndim == 2:
                 x_coord = slice(None, None)
                 bbox_final = np.asarray([self.bbox_first_coords, (self.bbox_first_coords[0], coords[1]), coords, (coords[0], self.bbox_first_coords[1])])
@@ -1030,11 +1138,11 @@ class SamWidget(QWidget):
                 top_left_coord, bottom_right_coord = self.find_corners(bbox)
                 bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
                 bbox = np.asarray(bbox).flatten()
-            logits = self.sam_logits
+            logits = self.sam.logits
             if not self.check_prev_mask.isChecked():
                 logits = None
-            self.sam_predictor.features = self.sam_features
-            prediction, _, self.sam_logits = self.sam_predictor.predict(
+            self.sam.predictor.features = self.sam.features
+            prediction, _, self.sam.logits = self.sam.predictor.predict(
                 point_coords=points,
                 point_labels=labels,
                 box=bbox,
@@ -1058,11 +1166,15 @@ class SamWidget(QWidget):
                 top_left_coord, bottom_right_coord = self.find_corners(bbox)
                 bbox = [np.flip(top_left_coord), np.flip(bottom_right_coord)]
                 bbox = np.asarray(bbox).flatten()
-            self.sam_predictor.features = self.sam_features[x_coord]
-            logits = self.sam_logits[x_coord]
+
+            # check if current z is in range of loaded embedding, and try reloading if not
+            self.sam.check_set(self)
+
+            self.sam.predictor.features = self.sam.features[self.sam.z(self)]
+            logits = self.sam.logits[self.sam.z(self)]
             if not self.check_prev_mask.isChecked():
                 logits = None
-            prediction_yz, _, self.sam_logits[x_coord] = self.sam_predictor.predict(
+            prediction_yz, _, self.sam.logits[self.sam.z(self)] = self.sam.predictor.predict(
                 point_coords=points,
                 point_labels=labels,
                 box=bbox,
@@ -1163,7 +1275,7 @@ class SamWidget(QWidget):
         self.points_layer.editable = False
 
         if selected_layer is not None:
-            self.viewer.layers.selection.active = selected_layer
+            self.select_layer_while_active(selected_layer)
         self.points_layer.refresh()
 
     def update_bbox_layer(self, bboxes, bbox_tmp=None):
@@ -1296,7 +1408,7 @@ class SamWidget(QWidget):
 
         self.points = history_item["points"]
         self.point_label = history_item["point_label"]
-        self.sam_logits = history_item["logits"]
+        self.sam.logits = history_item["logits"]
         self.bboxes = history_item["bboxes"]
         self.update_points_layer(self.points)
         self.update_bbox_layer(self.bboxes)
