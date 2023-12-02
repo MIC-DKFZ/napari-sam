@@ -1,5 +1,5 @@
 import datetime
-from qtpy.QtWidgets import QVBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
+from qtpy.QtWidgets import QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
 from qtpy.QtGui import QIntValidator, QDoubleValidator
 from qtpy import QtCore
 from qtpy.QtCore import Qt
@@ -10,7 +10,7 @@ from collections import deque, defaultdict
 import inspect
 from segment_anything import SamPredictor, build_sam_vit_h, build_sam_vit_l, build_sam_vit_b
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
-from napari_sam.utils import normalize
+#from napari_sam.utils import normalize###############################
 import torch
 from vispy.util.keys import CONTROL
 import copy
@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 import os
 from os.path import join
+import pandas as pd
 
 
 class AnnotatorMode(Enum):
@@ -39,7 +40,6 @@ class BboxState(Enum):
     DRAG = 1
     RELEASE = 2
 
-ANNOT_CLASSES = ["beads", "tubule", "distal", "glom", "graft"]
 
 SAM_MODELS = {
     "default": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
@@ -72,9 +72,9 @@ class SamManager():  ##TODO Makes this outside class
         z = self.z(samwidget)
         embedding_fname = f"{self.image_basename}_zmax{self.max_z_in_stack}-zstack{self.z_stack_id}.pt"
         presaved = os.path.join(self.embedding_fp, embedding_fname)
-        print("checking presaved", presaved)
+
         if os.path.exists(presaved):
-            print("  using presaved")
+            print("  using presaved embedding", presaved)
             self.features = torch.load(presaved,
                                        map_location=f'cuda:{torch.cuda.current_device()}')
             # TODO make above work no matter if it's running on cpu...?
@@ -145,6 +145,7 @@ class SamWidget(QWidget):
         else:
             self.device = "cuda"
 
+        # create top level layout
         main_layout = QVBoxLayout()
 
         # self.scroll_area = QScrollArea()
@@ -152,34 +153,72 @@ class SamWidget(QWidget):
         # self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         # self.scroll_area.setWidgetResizable(True)
 
+        # create tab widget
+        tabs = QTabWidget()
+        tabs.addTab(self.SAMTabUI(), "SAM")
+        tabs.addTab(self.SettingsTabUI(), "Settings")
+        # tabs.addTab(self.IOTabUI(), "I/O")
+        main_layout.addWidget(tabs)
+
+        self.image_name = None
+        self.image_layer = None
+        self.label_layer = None
+        self.label_layer_changes = None
+        self.label_color_mapping = None
+        self.points_layer = None
+        self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
+        self.old_points = np.zeros(0)
+        self.point_size = 10
+        self.le_point_size.setText(str(self.point_size))
+        self.bbox_layer = None
+        self.bbox_layer_name = "Ignore this layer2"
+        self.bbox_edge_width = 10
+        self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
+
+        self.init_comboboxes()
+        self.sam = SamManager()
+        self.viewer.layers.selection.events.active.connect(
+            self._select_labels_layer)
+        self.adding_multiple_labels = False
+
+        self.points = defaultdict(list)
+        self.point_label = None
+
+        self.bboxes = defaultdict(list)
+        self.setLayout(main_layout)
+        # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+
+    def SAMTabUI(self):
         self.layer_types = {"image": napari.layers.image.image.Image, "labels": napari.layers.labels.labels.Labels}
+        tab = QTabWidget()
+        layout = QVBoxLayout()
 
         l_model_type = QLabel("Select model type:")
-        main_layout.addWidget(l_model_type)
+        layout.addWidget(l_model_type)
 
         self.cb_model_type = QComboBox()
-        main_layout.addWidget(self.cb_model_type)
+        layout.addWidget(self.cb_model_type)
 
         self.btn_load_model = QPushButton("Load model")
         self.btn_load_model.clicked.connect(self._load_model)
-        main_layout.addWidget(self.btn_load_model)
+        layout.addWidget(self.btn_load_model)
         self.loaded_model = None
         self.init_model_type_combobox()
 
         l_image_layer = QLabel("Select input image layer:")
-        main_layout.addWidget(l_image_layer)
+        layout.addWidget(l_image_layer)
 
         self.cb_image_layers = QComboBox()
         self.cb_image_layers.addItems(self.get_layer_names("image"))
         self.cb_image_layers.currentTextChanged.connect(self.on_image_change)
-        main_layout.addWidget(self.cb_image_layers)
+        layout.addWidget(self.cb_image_layers)
 
         l_label_layer = QLabel("Select output labels layer:")
-        main_layout.addWidget(l_label_layer)
+        layout.addWidget(l_label_layer)
 
         self.cb_label_layers = QComboBox()
         self.cb_label_layers.addItems(self.get_layer_names("labels"))
-        main_layout.addWidget(self.cb_label_layers)
+        layout.addWidget(self.cb_label_layers)
 
         self.comboboxes = [{"combobox": self.cb_image_layers, "layer_type": "image"}, {"combobox": self.cb_label_layers, "layer_type": "labels"}]
 
@@ -189,30 +228,24 @@ class SamWidget(QWidget):
         self.rb_click = QRadioButton("Click && Bounding Box")
         self.rb_click.setChecked(True)
         self.rb_click.setToolTip("Positive Click: Middle Mouse Button\n \n"
-                                 "Negative Click: Control + Middle Mouse Button \n \n"
-                                 "Undo: Control + Z \n \n"
-                                 "Select Point: Left Click \n \n"
-                                 "Delete Selected Point: Delete")
+                                    "Negative Click: Control + Middle Mouse Button \n \n"
+                                    "Undo: Control + Z \n \n"
+                                    "Select Point: Left Click \n \n"
+                                    "Delete Selected Point: Delete")
         self.l_annotation.addWidget(self.rb_click)
         self.rb_click.clicked.connect(self.on_everything_mode_checked)
-
-        # self.rb_bbox = QRadioButton("Bounding Box (WIP)")
-        # self.rb_bbox.setEnabled(False)
-        # self.rb_bbox.setToolTip("This mode is still Work In Progress (WIP)")
-        # self.rb_bbox.setStyleSheet("color: gray")
-        # self.l_annotation.addWidget(self.rb_bbox)
 
         self.rb_auto = QRadioButton("Everything")
         # self.rb_auto.setEnabled(False)
         # self.rb_auto.setStyleSheet("color: gray")
         self.rb_auto.setToolTip("Creates automatically an instance segmentation \n"
-                                            "of the entire image.\n"
-                                            "No user interaction possible.")
+                                               "of the entire image.\n"
+                                               "No user interaction possible.")
         self.l_annotation.addWidget(self.rb_auto)
         self.rb_auto.clicked.connect(self.on_everything_mode_checked)
 
         self.g_annotation.setLayout(self.l_annotation)
-        main_layout.addWidget(self.g_annotation)
+        layout.addWidget(self.g_annotation)
 
         self.g_segmentation = QGroupBox("Segmentation mode")
         self.l_segmentation = QVBoxLayout()
@@ -220,22 +253,22 @@ class SamWidget(QWidget):
         self.rb_semantic = QRadioButton("Semantic")
         self.rb_semantic.setChecked(True)
         self.rb_semantic.setToolTip("Enables the user to create a \n"
-                                 "multi-label (semantic) segmentation of different classes.\n \n"
-                                 "All objects from the same class \n"
-                                 "should be given the same label by the user.\n \n"
-                                 "The current label can be changed by the user \n"
-                                 "on the labels layer pane after selecting the labels layer.")
+                                    "multi-label (semantic) segmentation of different classes.\n \n"
+                                    "All objects from the same class \n"
+                                    "should be given the same label by the user.\n \n"
+                                    "The current label can be changed by the user \n"
+                                    "on the labels layer pane after selecting the labels layer.")
         # self.rb_semantic.setEnabled(False)
         # self.rb_semantic.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_semantic)
 
         self.rb_instance = QRadioButton("Instance")
         self.rb_instance.setToolTip("Enables the user to create an \n"
-                                 "instance segmentation of different objects.\n \n"
-                                 "Objects can be from the same or different classes,\n"
-                                 "but each object should be given a unique label by the user. \n \n"
-                                 "The current label can be changed by the user \n"
-                                 "on the labels layer pane after selecting the labels layer.")
+                                    "instance segmentation of different objects.\n \n"
+                                    "Objects can be from the same or different classes,\n"
+                                    "but each object should be given a unique label by the user. \n \n"
+                                   "The current label can be changed by the user \n"
+                                   "on the labels layer pane after selecting the labels layer.")
         # self.rb_instance.setEnabled(False)
         # self.rb_instance.setStyleSheet("color: gray")
         self.l_segmentation.addWidget(self.rb_instance)
@@ -244,28 +277,32 @@ class SamWidget(QWidget):
         self.rb_instance.clicked.connect(self.on_segmentation_mode_changed)
 
         self.g_segmentation.setLayout(self.l_segmentation)
-        main_layout.addWidget(self.g_segmentation)
+        layout.addWidget(self.g_segmentation)
 
         self.btn_activate = QPushButton("Activate")
         self.btn_activate.clicked.connect(self._activate)
         self.btn_activate.setEnabled(False)
         self.is_active = False
-        main_layout.addWidget(self.btn_activate)
+        layout.addWidget(self.btn_activate)
 
         self.btn_mode_switch = QPushButton("Switch to BBox Mode")
         self.btn_mode_switch.clicked.connect(self._switch_mode)
         self.btn_mode_switch.setEnabled(False)
-        main_layout.addWidget(self.btn_mode_switch)
+        layout.addWidget(self.btn_mode_switch)
+
+        self.btn_finish_image = QPushButton("Finished annotating image")
+        self.btn_finish_image.clicked.connect(self._finish_image)
+        layout.addWidget(self.btn_finish_image)
 
         self.check_prev_mask = QCheckBox('Use previous SAM prediction (recommended)')
         self.check_prev_mask.setEnabled(False)
         self.check_prev_mask.setChecked(True)
-        main_layout.addWidget(self.check_prev_mask)
+        layout.addWidget(self.check_prev_mask)
 
         self.check_auto_inc_bbox= QCheckBox('Auto increment bounding box label')
         self.check_auto_inc_bbox.setEnabled(False)
         self.check_auto_inc_bbox.setChecked(True)
-        main_layout.addWidget(self.check_auto_inc_bbox)
+        layout.addWidget(self.check_auto_inc_bbox)
 
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
@@ -313,12 +350,12 @@ class SamWidget(QWidget):
         self.g_info_click = QGroupBox("Click Mode")
         self.l_info_click = QVBoxLayout()
         self.label_info_click = QLabel("Positive Click: Middle Mouse Button\n \n"
-                                 "Negative Click: Control + Middle Mouse Button\n \n"
-                                 "Undo: Control + Z\n \n"
-                                 "Select Point: Left Click\n \n"
-                                 "Delete Selected Point: Delete\n \n"
-                                 "Pick Label: Control + Left Click\n \n"
-                                 "Increment Label: M\n \n")
+                                       "Negative Click: Control + Middle Mouse Button\n \n"
+                                       "Undo: Control + Z\n \n"
+                                       "Select Point: Left Click\n \n"
+                                       "Delete Selected Point: Delete\n \n"
+                                       "Pick Label: Control + Left Click\n \n"
+                                       "Increment Label: M\n \n")
         self.label_info_click.setWordWrap(True)
         self.l_info_click.addWidget(self.label_info_click)
         self.g_info_click.setLayout(self.l_info_click)
@@ -327,39 +364,38 @@ class SamWidget(QWidget):
         scroll_area_info = QScrollArea()
         scroll_area_info.setWidget(container_widget_info)
         scroll_area_info.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        main_layout.addWidget(scroll_area_info)
+        layout.addWidget(scroll_area_info)
 
         self.scroll_area_auto = self.init_auto_mode_settings()
-        main_layout.addWidget(self.scroll_area_auto)
+        layout.addWidget(self.scroll_area_auto)
 
-        self.setLayout(main_layout)
+        tab.setLayout(layout)
 
-        self.image_name = None
-        self.image_layer = None
-        self.label_layer = None
-        self.label_layer_changes = None
-        self.label_color_mapping = None
-        self.points_layer = None
-        self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
-        self.old_points = np.zeros(0)
-        self.point_size = 10
-        self.le_point_size.setText(str(self.point_size))
-        self.bbox_layer = None
-        self.bbox_layer_name = "Ignore this layer2"
-        self.bbox_edge_width = 10
-        self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
+        return tab
 
-        self.init_comboboxes()
-        self.sam = SamManager()
-        self.viewer.layers.selection.events.active.connect(self._select_labels_layer)
-        self.adding_multiple_labels = False
+    def SettingsTabUI(self):
+        tab = QWidget()
+        layout = QVBoxLayout()
 
-        self.points = defaultdict(list)
-        self.point_label = None
+        self.g_annotation_settings = QGroupBox("Annotation settings")
+        self.l_annotation_settings = QVBoxLayout()
+        # user writes down segmentation classes
+        l_annot_classes = QLabel("List of labels to segment (comma separated NO SPACE)")
+        #l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
+        self.l_annotation_settings.addWidget(l_annot_classes)
+        self.le_annot_classes = QLineEdit()
+        self.le_annot_classes.setText("Label1,Label2")
+        # validator = QValidator() #TODO validate the separator
+        #self.le_annot_classes.setValidator(validator)
+        self.l_annotation_settings.addWidget(self.le_annot_classes)
 
-        self.bboxes = defaultdict(list)
+        self.g_annotation_settings.setLayout(self.l_annotation_settings)
+        layout.addWidget(self.g_annotation_settings)
 
-        # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
+
+
+        tab.setLayout(layout)
+        return tab
 
     def _select_labels_layer(self):
         """
@@ -397,6 +433,41 @@ class SamWidget(QWidget):
             self.is_active = False
         self.viewer.layers.selection.active = layer
         self.is_active = original_active_status
+
+    def _finish_image(self):
+        print("FINISH IMAGE BUTTON PRESSED")
+
+    def check_input_imaage_matching_metadata_record(self, paths):
+        METADATA_FP = r'\\datastore.mcri.edu.au\kidn1\Group-Little_MCRI\GROUPS\MRFF-Kidney-Engineering\Data\Transplant_IF\metadata.xlsx'
+        EXT_LIST = ['csv', 'xls', 'xlsx', 'xlsm', 'xlsb']
+        # read metadata file
+        if METADATA_FP.endswith("csv"):
+            info_df = pd.read_csv(METADATA_FP)
+        elif any([METADATA_FP.endswith(ext) for ext in EXT_LIST]):
+            info_df = pd.read_excel(METADATA_FP)
+
+        metadata = {}
+        names = []
+        for path in paths:
+            image_name = os.path.basename(path)
+            image_info = info_df[info_df["Image"] == image_name]
+            if image_info.empty:
+                print(f"WARNING: {image_name} does not have a metadata record in "
+                      f"{METADATA_FP}. Check that column Image contains a "
+                      f"record for {image_name}. No metrics file or graphs will be output.")
+            else:
+                metadata[path] = image_info
+                # print metadata to command line
+                print("_______________________________________________________")
+                print(f"METADATA READ IN FROM {METADATA_FP}")
+                for col in image_info:
+                    print(f"  {col}: {image_info.iloc[0][col]}")
+                # print("_______________________________________________________")
+                # name of each layer in napari viewer will be prepended by stain
+                for ch in image_info["stain"].iloc[0].split("_"):
+                    names.append(f"{ch} {image_name}")
+        return metadata, names
+
 
     def init_auto_mode_settings(self):
         container_widget_auto = QWidget()
@@ -687,12 +758,15 @@ class SamWidget(QWidget):
         self.btn_load_model.setEnabled(True)
         self._check_activate_btn()
 
-        self.adding_multiple_labels = True
-        for name in ANNOT_CLASSES:
-            current_image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
-            self.viewer.add_labels(np.zeros(current_image_layer.data.shape,
-                                            dtype='uint8'), name=name)
-        self.adding_multiple_labels = False
+        if self.le_annot_classes.text() is not None:
+            self.adding_multiple_labels = True
+            # convert to list
+            annot_classes = self.le_annot_classes.text().split(",")
+            for name in annot_classes:
+                current_image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
+                self.viewer.add_labels(np.zeros(current_image_layer.data.shape,
+                                                dtype='uint8'), name=name)
+            self.adding_multiple_labels = False
 
     def _activate(self):
         self.btn_activate.setEnabled(False)
