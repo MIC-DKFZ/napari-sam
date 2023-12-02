@@ -23,7 +23,7 @@ from pathlib import Path
 import os
 from os.path import join
 import pandas as pd
-
+import warnings
 
 class AnnotatorMode(Enum):
     NONE = 0
@@ -162,6 +162,7 @@ class SamWidget(QWidget):
 
         self.image_name = None
         self.image_layer = None
+        self.metadata = {}
         self.label_layer = None
         self.label_layer_changes = None
         self.label_color_mapping = None
@@ -291,7 +292,7 @@ class SamWidget(QWidget):
         layout.addWidget(self.btn_mode_switch)
 
         self.btn_finish_image = QPushButton("Finished annotating image")
-        self.btn_finish_image.clicked.connect(self._finish_image)
+        self.btn_finish_image.clicked.connect(self._on_finish_image)
         layout.addWidget(self.btn_finish_image)
 
         self.check_prev_mask = QCheckBox('Use previous SAM prediction (recommended)')
@@ -377,11 +378,12 @@ class SamWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout()
 
-        self.g_annotation_settings = QGroupBox("Annotation settings")
+        # ANNOTATION TYPES
+        self.g_annotation_settings = QGroupBox("Annotation types")
         self.l_annotation_settings = QVBoxLayout()
         # user writes down segmentation classes
         l_annot_classes = QLabel("List of labels to segment (comma separated NO SPACE)")
-        #l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
+        l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
         self.l_annotation_settings.addWidget(l_annot_classes)
         self.le_annot_classes = QLineEdit()
         self.le_annot_classes.setText("Label1,Label2")
@@ -392,6 +394,34 @@ class SamWidget(QWidget):
         self.g_annotation_settings.setLayout(self.l_annotation_settings)
         layout.addWidget(self.g_annotation_settings)
 
+        # METRICS & GRAPHS
+        self.g_output_settings = QGroupBox("Metrics && Graphs")
+        self.l_output_settings = QVBoxLayout()
+
+        l_metadata_fp = QLabel("Filepath for image information spreadsheet")
+        # l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
+        self.l_output_settings.addWidget(l_metadata_fp)
+        self.le_metadata_fp = QLineEdit()
+        # validator_spreadsheet = QValidator() #TODO validate the separator as filepath of type spreadsheet EXT
+        # self.le_metadata_fp.setValidator(validator_spreadsheet)
+        self.l_output_settings.addWidget(self.le_metadata_fp)
+
+        l_collated_metrics_fp = QLabel("Filepath for collated output metrics files (optional)")
+        self.l_output_settings.addWidget(l_collated_metrics_fp)
+        self.le_collated_metrics_fp = QLineEdit()
+        #validator_csv = QValidator()
+        #self.le_collated_metrics_fp.setValidator(validator_csv)
+        self.le_collated_metrics_fp.textChanged.connect(self.check_input_image_matching_metadata_record)
+        self.l_output_settings.addWidget(self.le_collated_metrics_fp)
+
+        self.g_output_settings.setLayout(self.l_output_settings)
+        layout.addWidget(self.g_output_settings)
+
+        self.l_percentage_of_label = QLabel("Record percentage of this label that other annotations make up (optional)")
+        self.l_output_settings.addWidget(self.l_percentage_of_label)
+        self.cb_label_layers_percentage_of = QComboBox()
+        self.cb_label_layers_percentage_of.addItems(self.get_layer_names("labels"))
+        self.l_output_settings.addWidget(self.cb_label_layers_percentage_of)
 
 
         tab.setLayout(layout)
@@ -434,40 +464,63 @@ class SamWidget(QWidget):
         self.viewer.layers.selection.active = layer
         self.is_active = original_active_status
 
-    def _finish_image(self):
+    def _on_finish_image(self):
         print("FINISH IMAGE BUTTON PRESSED")
+        self._save_labels()
+        self._measure()
+        # generate graphs
+        self.viewer.layers.clear()
 
-    def check_input_imaage_matching_metadata_record(self, paths):
-        METADATA_FP = r'\\datastore.mcri.edu.au\kidn1\Group-Little_MCRI\GROUPS\MRFF-Kidney-Engineering\Data\Transplant_IF\metadata.xlsx'
+    def check_input_image_matching_metadata_record(self):
+
         EXT_LIST = ['csv', 'xls', 'xlsx', 'xlsm', 'xlsb']
+        image_layer_name = self.cb_image_layers.currentText()
+        # only proceed if image layer has been selected already
+        if (image_layer_name == ""):
+            return
+
+        metadata_fp = self.le_metadata_fp.text().strip()
+        image_layer = self.viewer.layers[image_layer_name]
+        path = image_layer.source.path
+        image_name = os.path.basename(path)
+
+        # if metadata record already read in, do not read again
+        # warning: assumes metadata record will not have changed since last read in
+        if image_name in self.metadata.keys():
+            return
+
         # read metadata file
-        if METADATA_FP.endswith("csv"):
-            info_df = pd.read_csv(METADATA_FP)
-        elif any([METADATA_FP.endswith(ext) for ext in EXT_LIST]):
-            info_df = pd.read_excel(METADATA_FP)
+        if metadata_fp.endswith("csv"):
+            info_df = pd.read_csv(metadata_fp)
+        elif any([metadata_fp.endswith(ext) for ext in EXT_LIST]):
+            info_df = pd.read_excel(metadata_fp)
+        elif (metadata_fp == '') or (metadata_fp is None):
+            # metadata filepath hasn't been set yet so do nothing
+            return
+        else:
+            warnings.warn(f"Image information spreadsheet "
+                          f"{metadata_fp} is not of filetype "
+                          f"{EXT_LIST} so cannot be processed")
+            return
 
-        metadata = {}
-        names = []
-        for path in paths:
-            image_name = os.path.basename(path)
-            image_info = info_df[info_df["Image"] == image_name]
-            if image_info.empty:
-                print(f"WARNING: {image_name} does not have a metadata record in "
-                      f"{METADATA_FP}. Check that column Image contains a "
-                      f"record for {image_name}. No metrics file or graphs will be output.")
-            else:
-                metadata[path] = image_info
-                # print metadata to command line
-                print("_______________________________________________________")
-                print(f"METADATA READ IN FROM {METADATA_FP}")
-                for col in image_info:
-                    print(f"  {col}: {image_info.iloc[0][col]}")
-                # print("_______________________________________________________")
-                # name of each layer in napari viewer will be prepended by stain
-                for ch in image_info["stain"].iloc[0].split("_"):
-                    names.append(f"{ch} {image_name}")
-        return metadata, names
 
+        image_info = info_df[info_df["Image"] == image_name]
+        if image_info.empty:
+            warnings.warn(f"{image_name} does not have a metadata record in "
+                          f"{metadata_fp}. Check that column Image contains a "
+                          f"record for {image_name}. No metrics file or graphs will be output")
+        else:
+            self.metadata[image_name] = image_info
+            # print metadata to command line if different from previous metadata or metadata never been set by napari-sam
+            #if (self.current_image_metadata is None) or (not self.metadata[image_name].equals(self.current_image_metadata)):
+            print("_______________________________________________________")
+            print(f"METADATA READ IN FROM {metadata_fp}")
+            for col in image_info:
+                print(f"  {col}: {image_info.iloc[0][col]}")
+            # print("_______________________________________________________")
+            #self.current_image_metadata = image_info
+
+        return
 
     def init_auto_mode_settings(self):
         container_widget_auto = QWidget()
@@ -625,7 +678,12 @@ class SamWidget(QWidget):
         # else:
         #     self.rb_auto.setEnabled(True)
         #     self.rb_auto.setStyleSheet("")
-        pass
+        #pass
+
+        # try and read in metadata entry
+        image_name = self.cb_image_layers.currentText()
+        if image_name != "":
+            self.check_input_image_matching_metadata_record()
 
     def init_model_type_combobox(self):
         model_types = list(SAM_MODELS.keys())
@@ -662,7 +720,6 @@ class SamWidget(QWidget):
         if self.loaded_model is not None:
             loaded_model_index = self.cb_model_type.findText("{} (Loaded)".format(self.loaded_model))
             self.cb_model_type.setCurrentIndex(loaded_model_index)
-
 
     def on_model_type_combobox_change(self):
         model_types = list(SAM_MODELS.keys())
@@ -761,7 +818,7 @@ class SamWidget(QWidget):
         if self.le_annot_classes.text() is not None:
             self.adding_multiple_labels = True
             # convert to list
-            annot_classes = self.le_annot_classes.text().split(",")
+            annot_classes = self.le_annot_classes.text().strip().split(",")
             for name in annot_classes:
                 current_image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
                 self.viewer.add_labels(np.zeros(current_image_layer.data.shape,
@@ -1075,7 +1132,6 @@ class SamWidget(QWidget):
 
     def on_contrast_limits_change(self):
         self.set_image()
-
 
     def set_image(self):
         if self.image_layer.ndim == 2:
@@ -1559,6 +1615,222 @@ class SamWidget(QWidget):
                 cached_weight_types[model_type] = False
 
         return cached_weight_types
+
+    def _save_labels(self):
+        image_layer_name = self.cb_image_layers.currentText()
+        save_path = self.viewer.layers[image_layer_name].source.path
+        save_folder = os.path.dirname(save_path)
+
+        all_label_layers = [x for x in self.viewer.layers if
+                            isinstance(x, napari.layers.Labels)]
+        #need to save all layers not just one
+        for layer in all_label_layers:
+
+            # don't save if no annotations in layer
+            if layer.data.sum() == 0:
+                continue
+
+            # save layer
+            label_name = layer.name
+            image_layer = self.viewer.layers[image_layer_name]
+            img_name = os.path.splitext(os.path.basename(image_layer.source.path))[0]
+            if img_name in label_name:
+                save_file = os.path.join(save_folder, f"{label_name}.tif")
+            else:
+                save_file = os.path.join(save_folder, f"{img_name}_{label_name}.tif")
+            print("saved:", save_file)
+            layer.save(save_file)
+
+    def _measure_2Dlabels(self):
+        """
+        Measuring annotations on 2D SAM labels
+        """
+
+        all_label_layers = [x for x in self.viewer.layers if
+                            isinstance(x, napari.layers.Labels)]
+
+        image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
+        image_name = os.path.basename(image_layer.source.path)
+        print("---------------------")
+        print(f"IMAGE: {image_name}")
+
+        # find info for this image if it was specified in csv
+
+        if self.le_collated_metrics_fp.text().strip():
+            image_info = self.info_df[self.info_df["Image"] == image_name]
+            if image_info.shape[0] != 1:
+                print("WARNING: No or more than one matching Image name in "
+                              "input info csv so will NOT output metrics file or graphs")
+                return
+            image_output_dfs = []
+
+        print(f"Z slice: {self.sam2D_z}")
+        for label_layer in all_label_layers:
+            labels = np.array(label_layer.data)
+            if labels.max()==0:
+                continue
+            print(f"Label : {label_layer.name}")
+            object_ids = []
+            object_areas = []
+            sum = 0
+
+            for i in range(1,labels.max()+1):
+                area = (labels == i).sum()
+                if area > 0:
+                    object_ids.append(i)
+                    object_areas.append(area)
+                    print (f"   objectID {i}: {area}")
+                    sum += area
+            print(f"   TOTAL AREA: {sum}")
+
+            # add to output csv
+            if self.le_collated_metrics_fp.text().strip():
+                shape = "x".join([str(x) for x in self.viewer.layers[
+                    0].data.shape])
+                print("shape", shape)
+                image_output_df = image_info.loc[np.repeat(image_info.index, \
+                                                                 len(object_ids))]
+                image_output_df["image_res"] = shape
+                image_output_df["z"] = self.sam2D_z
+                image_output_df["measure"] = label_layer.name
+                image_output_df["object ID"] = object_ids
+                image_output_df["pixel area"] = object_areas
+                image_output_dfs.append(image_output_df)
+
+        if self.le_collated_metrics_fp.text().strip():
+            output_df = pd.concat(image_output_dfs)
+            output_fp = self.output_csv_filepath.text().strip()
+            output_df.to_csv(output_fp, mode='a', header=(not os.path.exists(
+                output_fp)), index=False) # doesn't include header
+            # if csv file already exists
+            print("Measurements saved to:", output_fp)
+
+        print("---------------------")
+
+    #function for measuring annotations (manual annotating)
+    def _measure(self):#########################################WORKING ON THIS - INCOMPLETE
+        print("measure")
+        all_label_layers = [x for x in self.viewer.layers
+                            if isinstance(x, napari.layers.Labels)]
+        object_output_dfs = []
+        slice_output_dfs = []
+        image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
+        image_path = image_layer.source.path
+        dirname, image_name = os.path.split(image_path)
+
+        # returns z values with any annotations - reduce looping through unannotated z slices
+        if image_layer.ndim == 3:
+            annotated_z = np.nonzero(
+                np.any(np.any(np.any(np.stack([l.data for l in all_label_layers]),
+                              axis=0), axis=1),axis=1))[0]
+        elif image_layer.ndim == 2:
+            annotated_z = 0
+        else:
+            warnings.warn(f"Currently do not support generating metrics for image dimensions {image_layer.ndim}, so none were generated")
+            return
+
+        #print(annotated_z)
+        for z in annotated_z:#range(0, self.image_layer_name.shape[0]):
+            label_slice_sums = {}
+            print(f"Slice {z}")
+            for label_layer in all_label_layers:
+
+                # deal with 2D or 3D
+                if image_layer.ndim == 3:
+                    label_layer_data = label_layer.data[z, ...]
+                elif image_layer.ndim == 2:
+                    label_layer_data = label_layer.data
+
+                if label_layer_data.sum() <= 0: # skips layers with no label annotation
+                    continue
+                #annotated_z.append(z)
+                label_slice_sums[label_layer.name] = np.count_nonzero(label_layer_data)
+                print(f"  Label: {label_layer.name}")
+
+                object_ids = []
+                object_areas = []
+                for i in range(1, label_layer_data.max() + 1):
+                    area = (label_layer_data == i).sum()
+                    if area <= 0: # skips label values with no annotation
+                        continue
+                    object_ids.append(i)
+                    object_areas.append(area)
+                    #print(f"    objectID {i}: {area}")
+
+                # check if metadata record exists and if so read in
+                if image_name in self.metadata.keys():
+                    image_info = self.metadata[image_name]
+                else:
+                    image_info_no_metadata = {"Image": [image_name], "Folder": [dirname]}
+                    image_info = pd.DataFrame(image_info_no_metadata)
+                object_output_df = image_info.loc[np.repeat(image_info.index, len(object_ids))]
+
+                # generate this rows in object spreadsheet for this slice and label
+                shape = "x".join([str(x) for x in self.viewer.layers[0].data.shape])
+                object_output_df["image_res"] = shape
+                object_output_df["z"] = z
+                object_output_df["label"] = label_layer.name
+                object_output_df["object ID"] = object_ids
+                object_output_df["pixel area"] = object_areas
+                object_output_dfs.append(object_output_df)
+
+            # generate rows in slice spreadsheet for each label in this slice
+            slice_output_df = image_info.loc[np.repeat(image_info.index, len(label_slice_sums))]
+            slice_output_df["z"] = z
+            slice_output_df["label"] = label_slice_sums.keys()
+            slice_output_df["pixel area"] = label_slice_sums.values()
+            # WARNING: assumes all annotations are inside PERCENTAGE_OF_LABEL annotation
+            # what happens when e.g. annotate mouse gloms not just graft gloms
+            percentage_of_label = self.cb_label_layers_percentage_of.currentText()
+            if percentage_of_label != "":
+                slice_output_df[f"% {percentage_of_label} pixel area"] = 100*slice_output_df["pixel area"]/label_slice_sums[percentage_of_label]
+            slice_output_dfs.append(slice_output_df)
+            print("area annotations per slice:", label_slice_sums)
+            # print("mean pixels annotated per slice {}".format(
+            #    np.mean(vals[vals > 0])))
+
+        all_object_output_df = pd.concat(object_output_dfs)
+        all_slice_output_df = pd.concat(slice_output_dfs)
+        print(f"Total {len(annotated_z)} slices annotated: {annotated_z}")
+
+        # write to spreadsheet for that image
+        this_image_output = os.path.splitext(image_layer.source.path)[0]+"_annotation_measurements.xlsx"
+        if os.path.exists(this_image_output):
+            warnings.warn(f"{this_image_output} already exists, will be writing over that file")
+        with pd.ExcelWriter(this_image_output) as writer:
+            all_object_output_df.to_excel(writer, sheet_name="objects", index=False)
+            all_slice_output_df.to_excel(writer, sheet_name="slices", index=False)
+            print(f"saved this image's metrics to  {this_image_output}")
+
+        # write to spreadsheet with all image data, if metadata was read in and output csv specified
+        if (image_name in self.metadata.keys()) and (self.le_collated_metrics_fp.text().strip() != ""):
+            csv_collated_save_folder = self.le_collated_metrics_fp.text().strip()
+            csv_collated_save_objects_fp = os.path.join(csv_collated_save_folder, "annotation_measurements_objects.csv")
+            csv_collated_save_slices_fp = os.path.join(csv_collated_save_folder, "annotation_measurements_slices.csv")
+            all_object_output_df.to_csv(csv_collated_save_objects_fp,
+                                        mode='a',
+                                        index=False,
+                                        # avoid writing header to existing file#(not os.path.exists(csv_collated_save_objects_fp))
+                                        header=True
+                                        )
+            all_slice_output_df.to_csv(csv_collated_save_slices_fp,
+                                       mode='a',
+                                       index=False,
+                                       header =True# avoid writing header to existing file#(not os.path.exists(csv_collated_save_slices_fp))
+                                   )
+            print(f"saved this image's metrics to collated sheets {csv_collated_save_objects_fp} and {csv_collated_save_slices_fp}")
+        """# can't append to xlsx sheet that already exists
+        with pd.ExcelWriter(CSV_COLLATED_SAVE_FP, mode='a') as writer:
+            all_object_output_df.to_excel(writer, sheet_name="objects", index=False)
+            all_slice_output_df.to_excel(writer, sheet_name="slices", index=False)
+        """
+        #active_label = self.viewer.layers.selected
+        #export_data = da.array(self.viewer.layers.selected.data)
+        #label_name = self.viewer.layers.selected.title
+        #print(export_data.shape)
+        #print(label_name)
+        #export_path = string(self.viewer.layers.Image[0].metadata) + "_" + label_name
+        #print(export_path)
 
     # def _myfilter(self, row, parent):
     #     return "<hidden>" not in self.viewer.layers[row].name
