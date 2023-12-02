@@ -56,7 +56,7 @@ class SamManager():  ##TODO Makes this outside class
         self.channels = None
         self.z_stack_id = None
         self.max_z_in_stack = 100
-        self.embedding_fp = r'G:\Group-Little_MCRI\People\Thanushi\projects\annotation-tool\SAM pipeline\SAM embeddings'
+        self.embedding_fp = r'G:\Group-Little_MCRI\People\Thanushi\projects\annotation-tool\SAM_pipeline\SAM_embeddings'
         self.features = None
         self.model = None
         self.predictor = None
@@ -72,6 +72,7 @@ class SamManager():  ##TODO Makes this outside class
         z = self.z(samwidget)
         embedding_fname = f"{self.image_basename}_zmax{self.max_z_in_stack}-zstack{self.z_stack_id}.pt"
         presaved = os.path.join(self.embedding_fp, embedding_fname)
+        print("checking presaved", presaved)
         if os.path.exists(presaved):
             print("  using presaved")
             self.features = torch.load(presaved,
@@ -348,8 +349,6 @@ class SamWidget(QWidget):
         self.bbox_edge_width = 10
         self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
-
-
         self.init_comboboxes()
         self.sam = SamManager()
         self.viewer.layers.selection.events.active.connect(self._select_labels_layer)
@@ -364,22 +363,24 @@ class SamWidget(QWidget):
 
     def _select_labels_layer(self):
         """
-        Triggered whenever different layer is selected. If it's a labels layer, will
-        change the widget labels layer for model input.
+        Triggered whenever different layer is selected. If it's a labels layer
+        and model is currently active, will change the widget labels layer
+        for model input.
         :return:
         """
         current_layer = self.viewer.layers.selection.active
         if isinstance(current_layer, napari.layers.Labels) and \
                 (current_layer.name != self.cb_label_layers.currentText()):
-            # deactivate if active
             if self.is_active:
                 self._deactivate()
-            # switch output to that labels layer
-            self.cb_label_layers.setCurrentText(current_layer.name)
+                # switch output to that labels layer
+                self.cb_label_layers.setCurrentText(current_layer.name)
+                self._activate()
 
             # activate if not yet active and not adding initial set of layers
-            if (not self.is_active) and (not self.adding_multiple_labels):
-                self._activate()
+            elif (not self.is_active) and (not self.adding_multiple_labels):
+                self.cb_label_layers.setCurrentText(current_layer.name)
+            #    self._activate()
 
     def select_layer_while_active(self, layer):
         """
