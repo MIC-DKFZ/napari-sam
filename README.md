@@ -15,6 +15,14 @@ We have already **extended** SAM's click-based foreground separation to full **c
 
 At last, our SAM integration supports both **2D and 3D images**!
 
+This fork improves the 3D annotation workflow, allows for reading in 
+precomputed embeddings and generates metric outputs.
+
+**NOTE: this fork is under active development and has not be thoroughly 
+tested on various images formats. It likely has 
+many bugs - 
+please submit an issue if you encounter any.**
+
 ----------------------------------
 
 Everything mode             |  Click-based semantic segmentation mode |  Click-based instance segmentation mode

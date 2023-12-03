@@ -10,7 +10,7 @@ from collections import deque, defaultdict
 import inspect
 from segment_anything import SamPredictor, build_sam_vit_h, build_sam_vit_l, build_sam_vit_b
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
-#from napari_sam.utils import normalize###############################
+from napari_sam.utils import normalize###############################
 import torch
 from vispy.util.keys import CONTROL
 import copy
@@ -56,7 +56,6 @@ class SamManager():  ##TODO Makes this outside class
         self.channels = None
         self.z_stack_id = None
         self.max_z_in_stack = 100
-        self.embedding_fp = r'G:\Group-Little_MCRI\People\Thanushi\projects\annotation-tool\SAM_pipeline\SAM_embeddings'
         self.features = None
         self.model = None
         self.predictor = None
@@ -71,7 +70,8 @@ class SamManager():  ##TODO Makes this outside class
         self.z_stack_id = samwidget.viewer.dims.current_step[0] // self.max_z_in_stack
         z = self.z(samwidget)
         embedding_fname = f"{self.image_basename}_zmax{self.max_z_in_stack}-zstack{self.z_stack_id}.pt"
-        presaved = os.path.join(self.embedding_fp, embedding_fname)
+        embedding_fp = samwidget.le_embedding_fp.strip()
+        presaved = os.path.join(embedding_fp, embedding_fname)
 
         if os.path.exists(presaved):
             print("  using presaved embedding", presaved)
@@ -379,8 +379,9 @@ class SamWidget(QWidget):
         layout = QVBoxLayout()
 
         # ANNOTATION TYPES
-        self.g_annotation_settings = QGroupBox("Annotation types")
+        self.g_annotation_settings = QGroupBox("Data")
         self.l_annotation_settings = QVBoxLayout()
+
         # user writes down segmentation classes
         l_annot_classes = QLabel("List of labels to segment (comma separated NO SPACE)")
         l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
@@ -390,6 +391,12 @@ class SamWidget(QWidget):
         # validator = QValidator() #TODO validate the separator
         #self.le_annot_classes.setValidator(validator)
         self.l_annotation_settings.addWidget(self.le_annot_classes)
+
+        l_embedding_fp = QLabel("Folder containing presaved image embeddings")
+        self.l_annotation_settings.addWidget(l_embedding_fp)
+        self.le_embedding_fp = QLineEdit()
+        self.le_embedding_fp.setText("")
+        self.l_annotation_settings.addWidget(self.le_embedding_fp)
 
         self.g_annotation_settings.setLayout(self.l_annotation_settings)
         layout.addWidget(self.g_annotation_settings)
@@ -1143,7 +1150,7 @@ class SamWidget(QWidget):
                 contrast_limits = self.image_layer.contrast_limits
                 image = normalize(image, source_limits=contrast_limits, target_limits=(0, 255)).astype(np.uint8)
             self.sam.predictor.set_image(image)
-            self.sam.features = self.self.sam.predictor.features
+            self.sam.features = self.sam.predictor.features
         elif self.image_layer.ndim == 3:
             self.sam.check_set(self)
 
