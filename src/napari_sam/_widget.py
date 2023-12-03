@@ -70,7 +70,7 @@ class SamManager():  ##TODO Makes this outside class
         self.z_stack_id = samwidget.viewer.dims.current_step[0] // self.max_z_in_stack
         z = self.z(samwidget)
         embedding_fname = f"{self.image_basename}_zmax{self.max_z_in_stack}-zstack{self.z_stack_id}.pt"
-        embedding_fp = samwidget.le_embedding_fp.strip()
+        embedding_fp = samwidget.le_embedding_fp.text().strip()
         presaved = os.path.join(embedding_fp, embedding_fname)
 
         if os.path.exists(presaved):
@@ -120,6 +120,7 @@ class SamManager():  ##TODO Makes this outside class
                 l_creating_features.deleteLater()
 
     def check_set(self, samwidget):
+        # TODO handle when image has no source path as generated from inside console...
         samwidget_image_basename = os.path.splitext(os.path.basename(samwidget.image_layer.source.path))[0]
         if samwidget_image_basename != self.image_basename:
             self.generate_embedding(samwidget, samwidget_image_basename)
@@ -489,6 +490,11 @@ class SamWidget(QWidget):
         metadata_fp = self.le_metadata_fp.text().strip()
         image_layer = self.viewer.layers[image_layer_name]
         path = image_layer.source.path
+
+        # no path found for image
+        if path is None:
+            return
+        
         image_name = os.path.basename(path)
 
         # if metadata record already read in, do not read again
