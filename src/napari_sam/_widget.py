@@ -1,8 +1,10 @@
 import datetime
-from qtpy.QtWidgets import QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
+import glob
+
+from qtpy.QtWidgets import qApp, QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QWidget, QLabel, QComboBox, QRadioButton, QGroupBox, QProgressBar, QApplication, QScrollArea, QLineEdit, QCheckBox
 from qtpy.QtGui import QIntValidator, QDoubleValidator
 from qtpy import QtCore
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, QSettings
 import napari
 import numpy as np
 from enum import Enum
@@ -24,6 +26,7 @@ import os
 from os.path import join
 import pandas as pd
 import warnings
+import tifffile
 
 class AnnotatorMode(Enum):
     NONE = 0
@@ -74,7 +77,7 @@ class SamManager():  ##TODO Makes this outside class
         presaved = os.path.join(embedding_fp, embedding_fname)
 
         if os.path.exists(presaved):
-            print("  using presaved embedding", presaved)
+            print(f"  z={z}, using presaved embedding", presaved)
             self.features = torch.load(presaved,
                                        map_location=f'cuda:{torch.cuda.current_device()}')
             # TODO make above work no matter if it's running on cpu...?
@@ -134,7 +137,6 @@ class SamWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-
         self.annotator_mode = AnnotatorMode.NONE
         self.segmentation_mode = SegmentationMode.SEMANTIC
 
@@ -154,16 +156,19 @@ class SamWidget(QWidget):
         # self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         # self.scroll_area.setWidgetResizable(True)
 
+        self.image_name = None
+        self.image_name_cache = None
+        self.image_layer = None
+        self.metadata = {}
+
         # create tab widget
         tabs = QTabWidget()
         tabs.addTab(self.SAMTabUI(), "SAM")
-        tabs.addTab(self.SettingsTabUI(), "Settings")
+        self.settings_tab = self.SettingsTabUI()
+        tabs.addTab(self.settings_tab, "Settings")
         # tabs.addTab(self.IOTabUI(), "I/O")
         main_layout.addWidget(tabs)
 
-        self.image_name = None
-        self.image_layer = None
-        self.metadata = {}
         self.label_layer = None
         self.label_layer_changes = None
         self.label_color_mapping = None
@@ -171,6 +176,7 @@ class SamWidget(QWidget):
         self.points_layer_name = "Ignore this layer1"  # "Ignore this layer <hidden>"
         self.old_points = np.zeros(0)
         self.point_size = 10
+
         self.le_point_size.setText(str(self.point_size))
         self.bbox_layer = None
         self.bbox_layer_name = "Ignore this layer2"
@@ -190,6 +196,7 @@ class SamWidget(QWidget):
         self.setLayout(main_layout)
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
+
     def SAMTabUI(self):
         self.layer_types = {"image": napari.layers.image.image.Image, "labels": napari.layers.labels.labels.Labels}
         tab = QTabWidget()
@@ -206,6 +213,7 @@ class SamWidget(QWidget):
         layout.addWidget(self.btn_load_model)
         self.loaded_model = None
         self.init_model_type_combobox()
+
 
         l_image_layer = QLabel("Select input image layer:")
         layout.addWidget(l_image_layer)
@@ -281,6 +289,11 @@ class SamWidget(QWidget):
         self.g_segmentation.setLayout(self.l_segmentation)
         layout.addWidget(self.g_segmentation)
 
+        self.btn_add_annot_layers = QPushButton("Add annotation layers")
+        self.btn_add_annot_layers.clicked.connect(self._add_annot_layers_activate)
+        self.btn_add_annot_layers.setEnabled(False)
+        layout.addWidget(self.btn_add_annot_layers)
+
         self.btn_activate = QPushButton("Activate")
         self.btn_activate.clicked.connect(self._activate)
         self.btn_activate.setEnabled(False)
@@ -294,6 +307,7 @@ class SamWidget(QWidget):
 
         self.btn_finish_image = QPushButton("Finished annotating image")
         self.btn_finish_image.clicked.connect(self._on_finish_image)
+        self.btn_finish_image.setEnabled(False)
         layout.addWidget(self.btn_finish_image)
 
         self.check_prev_mask = QCheckBox('Use previous SAM prediction (recommended)')
@@ -378,6 +392,7 @@ class SamWidget(QWidget):
     def SettingsTabUI(self):
         tab = QWidget()
         layout = QVBoxLayout()
+        self.settings_tab_cache = {}
 
         # ANNOTATION TYPES
         self.g_annotation_settings = QGroupBox("Data")
@@ -385,10 +400,15 @@ class SamWidget(QWidget):
 
         # user writes down segmentation classes
         l_annot_classes = QLabel("List of labels to segment (comma separated NO SPACE)")
-        l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
+        l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2). "
+                                   "Do not use extra space after comma. "
+                                   "Do not use \"-\" "
+                                   "unless delineating paint numbers within "
+                                   "one label layer e.g. graft-host-background")
         self.l_annotation_settings.addWidget(l_annot_classes)
         self.le_annot_classes = QLineEdit()
         self.le_annot_classes.setText("Label1,Label2")
+        self.settings_tab_cache['le_annot_classes'] = self.le_annot_classes
         # validator = QValidator() #TODO validate the separator
         #self.le_annot_classes.setValidator(validator)
         self.l_annotation_settings.addWidget(self.le_annot_classes)
@@ -397,6 +417,7 @@ class SamWidget(QWidget):
         self.l_annotation_settings.addWidget(l_embedding_fp)
         self.le_embedding_fp = QLineEdit()
         self.le_embedding_fp.setText("")
+        self.settings_tab_cache['le_embedding_fp'] = self.le_embedding_fp
         self.l_annotation_settings.addWidget(self.le_embedding_fp)
 
         self.g_annotation_settings.setLayout(self.l_annotation_settings)
@@ -412,6 +433,7 @@ class SamWidget(QWidget):
         self.le_metadata_fp = QLineEdit()
         # validator_spreadsheet = QValidator() #TODO validate the separator as filepath of type spreadsheet EXT
         # self.le_metadata_fp.setValidator(validator_spreadsheet)
+        self.settings_tab_cache['le_metadata_fp'] = self.le_metadata_fp
         self.l_output_settings.addWidget(self.le_metadata_fp)
 
         l_collated_metrics_fp = QLabel("Filepath for collated output metrics files (optional)")
@@ -420,20 +442,91 @@ class SamWidget(QWidget):
         #validator_csv = QValidator()
         #self.le_collated_metrics_fp.setValidator(validator_csv)
         self.le_collated_metrics_fp.textChanged.connect(self.check_input_image_matching_metadata_record)
+        self.settings_tab_cache['le_collated_metrics_fp'] = self.le_collated_metrics_fp
         self.l_output_settings.addWidget(self.le_collated_metrics_fp)
+
+        self.l_percentage_of_annot = QLabel("Label to record other labels as a percentage of (optional)")
+        self.l_output_settings.addWidget(self.l_percentage_of_annot)
+        self.le_percentage_of_annot = QLineEdit()
+        #self.cb_label_layers_percentage_of = QComboBox()
+        #self.cb_label_layers_percentage_of.addItems(self.get_layer_names("labels"))
+        self.settings_tab_cache['le_percentage_of_annot'] = self.le_percentage_of_annot
+        self.l_output_settings.addWidget(self.le_percentage_of_annot)
+
+        self.l_percentage_of_annot_label = QLabel(
+            "Paint number of label to record other labels as a pecentage of (optional integer). If ALL or blank will consider all paint numbers.")
+        self.l_output_settings.addWidget(self.l_percentage_of_annot_label)
+        self.le_percentage_of_annot_label = QLineEdit()
+        # self.cb_label_layers_percentage_of = QComboBox()
+        # self.cb_label_layers_percentage_of.addItems(self.get_layer_names("labels"))
+        self.settings_tab_cache[
+            'le_percentage_of_annot_label'] = self.le_percentage_of_annot_label
+        self.l_output_settings.addWidget(self.le_percentage_of_annot_label)
 
         self.g_output_settings.setLayout(self.l_output_settings)
         layout.addWidget(self.g_output_settings)
 
-        self.l_percentage_of_label = QLabel("Record percentage of this label that other annotations make up (optional)")
-        self.l_output_settings.addWidget(self.l_percentage_of_label)
-        self.cb_label_layers_percentage_of = QComboBox()
-        self.cb_label_layers_percentage_of.addItems(self.get_layer_names("labels"))
-        self.l_output_settings.addWidget(self.cb_label_layers_percentage_of)
-
+        # setup saving settings
+        self.appInstance = QApplication.instance()
+        self.appInstance.lastWindowClosed.connect(self.on_close_callback)
+        self.getSettingValues(tab)
 
         tab.setLayout(layout)
         return tab
+
+
+    def getSettingValues(self, qwidget):
+        self.setting_variables = QSettings("napari-sam", "variables")
+        #qwidget = self.settings_tab
+        for k,w in self.settings_tab_cache.items():
+            val = self.setting_variables.value(f"{qwidget.objectName()}/{k}")
+            if isinstance(w, QLineEdit):
+                w.setText(val)
+            elif isinstance(w, QComboBox):
+                w.setCurrentText(val)
+            else:
+                raise Warning("Settings tab has widget type that not currently supported for caching")
+    
+        """
+        for w in QtWidgets.qApp.allWidgets():
+            mo = w.metaObject()
+            #if qwidget.objectName() != "":
+            for i in range(mo.propertyCount()):
+                name = mo.property(i).name()
+                val = self.setting_variables.value("{}/{}".format(qwidget.objectName(), name),
+                                                qwidget.property(name))
+                qwidget.setProperty(name, val)
+        """
+
+    def on_close_callback(self):
+        #print("closing")
+        # caching settings tab values to file
+        qwidget = self.settings_tab
+        for k,w in self.settings_tab_cache.items():
+            if isinstance(w, QLineEdit):
+                val = w.text()
+            elif isinstance(w, QComboBox):
+                val = w.currentText()
+            else:
+                raise Warning("Settings tab has widget type that not currently supported for caching")
+            self.setting_variables.setValue(
+                f"{qwidget.objectName()}/{k}",
+                val)
+
+        """
+        for i in range(qwidget.layout().count()):
+            w = self.layout().itemAt(i).layout().widget()
+
+            mo = w.metaObject()
+            print("CLOSE:", w.objectName(), mo)
+            #if qwidget.objectName() != "":
+            for i in range(mo.propertyCount()):
+                name = mo.property(i).name()
+                print("  CLOSE CALLBACK:", mo.objectName(), name)
+                #self.setting_variables.setValue(f"{w.objectName()}/{name}",
+                #                                w.property(name))
+            #self.setting_variables.setValue('le_annot_classes', self.le_annot_classes.text())
+        """
 
     def _select_labels_layer(self):
         """
@@ -494,7 +587,7 @@ class SamWidget(QWidget):
         # no path found for image
         if path is None:
             return
-        
+
         image_name = os.path.basename(path)
 
         # if metadata record already read in, do not read again
@@ -521,7 +614,7 @@ class SamWidget(QWidget):
         if image_info.empty:
             warnings.warn(f"{image_name} does not have a metadata record in "
                           f"{metadata_fp}. Check that column Image contains a "
-                          f"record for {image_name}. No metrics file or graphs will be output")
+                          f"record for {image_name}. Very minimal metrics file or graphs will be output")
         else:
             self.metadata[image_name] = image_info
             # print metadata to command line if different from previous metadata or metadata never been set by napari-sam
@@ -695,8 +788,12 @@ class SamWidget(QWidget):
 
         # try and read in metadata entry
         image_name = self.cb_image_layers.currentText()
-        if image_name != "":
-            self.check_input_image_matching_metadata_record()
+        if (image_name != ""):
+            # check if image source is not most recently checked for metadata
+            if (self.image_layer == None) or (self.viewer.layers[image_name].source.path != self.image_layer.source.path):
+                self.check_input_image_matching_metadata_record()
+            # cache the current image layer to allow checking if image source changed in future calls to this function
+            self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
 
     def init_model_type_combobox(self):
         model_types = list(SAM_MODELS.keys())
@@ -799,7 +896,7 @@ class SamWidget(QWidget):
 
     def _init_comboboxes_callback(self):
         self._check_activate_btn()
-        self.on_image_change()
+        #self.on_image_change()
 
     def _on_layers_changed_callback(self):
         self._check_activate_btn()
@@ -826,21 +923,49 @@ class SamWidget(QWidget):
         self.update_model_type_combobox()
         self.cb_model_type.setEnabled(True)
         self.btn_load_model.setEnabled(True)
+        self.btn_add_annot_layers.setEnabled(True)
+        self.btn_finish_image.setEnabled(True)
         self._check_activate_btn()
+        self._add_annot_layers_activate()
 
+    def _add_annot_layers_activate(self):
+        # adding labels layers
         if self.le_annot_classes.text() is not None:
             self.adding_multiple_labels = True
-            # convert to list
+
+            # load any saved annotations
+
+            image_layer_name = self.cb_image_layers.currentText()
+            save_path = self.viewer.layers[image_layer_name].source.path
+            save_folder = os.path.dirname(save_path)
+            img_name = os.path.splitext(os.path.basename(save_path))[0]
+            saved_tifs = os.path.join(save_folder, f"{img_name}_*.tif")
+            for fp in glob.glob(saved_tifs):
+                name = os.path.splitext(os.path.basename(fp))[0].split("_")[-1]
+                im = tifffile.imread(fp)
+                self.viewer.add_labels(im, name=name)
+
             annot_classes = self.le_annot_classes.text().strip().split(",")
+            viewer_layers = [l.name for l in self.viewer.layers]
             for name in annot_classes:
-                current_image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
-                self.viewer.add_labels(np.zeros(current_image_layer.data.shape,
-                                                dtype='uint8'), name=name)
+                # if already loaded, move to end of labels list
+                if name in viewer_layers:
+                    self.viewer.layers.move(viewer_layers.index(name), -1)
+                # create empty labels layer
+                else:
+                    current_image_layer = self.viewer.layers[
+                        self.cb_image_layers.currentText()]
+                    self.viewer.add_labels(
+                        np.zeros(current_image_layer.data.shape,
+                                 dtype='uint8'), name=name)
             self.adding_multiple_labels = False
+
+        self._activate()
 
     def _activate(self):
         self.btn_activate.setEnabled(False)
         if not self.is_active:
+            # activate
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
@@ -1746,6 +1871,31 @@ class SamWidget(QWidget):
         for z in annotated_z:#range(0, self.image_layer_name.shape[0]):
             label_slice_sums = {}
             print(f"Slice {z}")
+
+            # find area of the annotation label that want to take other annots as percentage of
+            # WARNING: assumes all annotations are inside PERCENTAGE_OF_LABEL annotation
+            # what happens when e.g. annotate mouse gloms not just graft gloms
+            percentage_of_annot = self.le_percentage_of_annot.text()
+            # self.cb_label_layers_percentage_of.currentText()
+            if percentage_of_annot != "":
+                percentage_of_annot_slice_area = {}
+                for i,percentage_annot in enumerate(percentage_of_annot.split(",")):
+                    percentage_of_annot_slice = self.viewer.layers[percentage_annot].data[z, ...]
+                    percentage_of_annot_label = self.le_percentage_of_annot_label.text().upper().split(",")
+                    # check annot_label is specified for this percentage_of_annot layer
+                    # (assuming specified in order when there are multiple layers specified)
+                    if (len(percentage_of_annot_label)>=i+1) and (percentage_of_annot_label[i] != "") and (percentage_of_annot_label[i] != "ALL"):
+                        percentage_annot_label = int(percentage_of_annot_label[i])
+                        print("DEBUG percentage_of_annot_label", percentage_annot_label)
+                        percentage_annot = percentage_annot.split("-")[percentage_annot_label-1]
+                        percentage_of_annot_slice_area[percentage_annot] = np.count_nonzero(percentage_of_annot_slice==percentage_annot_label)
+                    else:
+                        percentage_of_annot_slice_area[percentage_annot] = np.count_nonzero(percentage_of_annot_slice)
+
+                    print("DEBUG percentage_of_annot_slice_area", percentage_of_annot_slice_area)
+
+
+
             for label_layer in all_label_layers:
 
                 # deal with 2D or 3D
@@ -1757,12 +1907,34 @@ class SamWidget(QWidget):
                 if label_layer_data.sum() <= 0: # skips layers with no label annotation
                     continue
                 #annotated_z.append(z)
-                label_slice_sums[label_layer.name] = np.count_nonzero(label_layer_data)
+
+                # label slice sums considering possible dash in label name to
+                # indicate different classes in one layer
+                csv_label_name = lambda x: x.name.split("-") if "-" in x.name else x.name
+                if "-" not in label_layer.name:
+                    label_slice_sums[label_layer.name] = np.count_nonzero(label_layer_data)
+                else:
+                    label_names = csv_label_name(label_layer)
+                    for i in range(len(label_names)):
+                        label_slice_sums[label_names[i]] = np.count_nonzero(label_layer_data==i+1)
+
+                    # if label layer name has "-" check that it's semantic seg
+                    if len(label_names) != np.max(label_layer_data):
+                        raise Warning(f"Name of layer {label_layer.name} "
+                                      f"contains \"-\" so ensure it is semantic"
+                                      f" segmentation with label numbers "
+                                      f"strictly corresponding to names between dash "
+                                      f"e.g. graft-host has label 1=graft, "
+                                      f"2=host, 0=unlabelled/default "
+                                      f"and no other label numbers")
+
                 print(f"  Label: {label_layer.name}")
 
                 object_ids = []
                 object_areas = []
-                for i in range(1, label_layer_data.max() + 1):
+
+
+                for i in range(1, np.max(label_layer_data) + 1):
                     area = (label_layer_data == i).sum()
                     if area <= 0: # skips label values with no annotation
                         continue
@@ -1782,9 +1954,12 @@ class SamWidget(QWidget):
                 shape = "x".join([str(x) for x in self.viewer.layers[0].data.shape])
                 object_output_df["image_res"] = shape
                 object_output_df["z"] = z
-                object_output_df["label"] = label_layer.name
+                object_output_df["label"] = csv_label_name(label_layer)
                 object_output_df["object ID"] = object_ids
                 object_output_df["pixel area"] = object_areas
+                if percentage_of_annot != "":
+                    for percentage_annot,slice_area in percentage_of_annot_slice_area.items():
+                        object_output_df[f"% {percentage_annot} pixel area"] = [100*o/slice_area for o in object_areas]
                 object_output_dfs.append(object_output_df)
 
             # generate rows in slice spreadsheet for each label in this slice
@@ -1792,13 +1967,13 @@ class SamWidget(QWidget):
             slice_output_df["z"] = z
             slice_output_df["label"] = label_slice_sums.keys()
             slice_output_df["pixel area"] = label_slice_sums.values()
-            # WARNING: assumes all annotations are inside PERCENTAGE_OF_LABEL annotation
-            # what happens when e.g. annotate mouse gloms not just graft gloms
-            percentage_of_label = self.cb_label_layers_percentage_of.currentText()
-            if percentage_of_label != "":
-                slice_output_df[f"% {percentage_of_label} pixel area"] = 100*slice_output_df["pixel area"]/label_slice_sums[percentage_of_label]
+            if percentage_of_annot != "":
+                for percentage_annot, slice_area in percentage_of_annot_slice_area.items():
+                    slice_output_df[f"% {percentage_annot} pixel area"] = 100 * slice_output_df[
+                                                                             "pixel area"] / slice_area
             slice_output_dfs.append(slice_output_df)
             print("area annotations per slice:", label_slice_sums)
+
             # print("mean pixels annotated per slice {}".format(
             #    np.mean(vals[vals > 0])))
 
