@@ -12,14 +12,14 @@ from collections import deque, defaultdict
 import inspect
 from segment_anything import SamPredictor, build_sam_vit_h, build_sam_vit_l, build_sam_vit_b
 from segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
-from napari_sam.utils import normalize###############################
+from .utils import normalize###############################
 import torch
 from vispy.util.keys import CONTROL
 import copy
 import warnings
 from tqdm import tqdm
 from superqt.utils import qdebounced
-from napari_sam.slicer import slicer
+from .slicer import slicer
 import urllib.request
 from pathlib import Path
 import os
@@ -926,7 +926,6 @@ class SamWidget(QWidget):
         self.btn_add_annot_layers.setEnabled(True)
         self.btn_finish_image.setEnabled(True)
         self._check_activate_btn()
-        self._add_annot_layers_activate()
 
     def _add_annot_layers_activate(self):
         # adding labels layers
