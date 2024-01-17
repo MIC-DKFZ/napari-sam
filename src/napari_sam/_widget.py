@@ -926,7 +926,6 @@ class SamWidget(QWidget):
         self.btn_add_annot_layers.setEnabled(True)
         self.btn_finish_image.setEnabled(True)
         self._check_activate_btn()
-        self._add_annot_layers_activate()
 
     def _add_annot_layers_activate(self):
         # adding labels layers
