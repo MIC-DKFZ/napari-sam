@@ -928,28 +928,23 @@ class SamWidget(QWidget):
         self._check_activate_btn()
 
     def _add_annot_layers_activate(self):
-        # adding labels layers
+
+        self.adding_multiple_labels = True
+
+        image_layer_name = self.cb_image_layers.currentText()
+        save_path = self.viewer.layers[image_layer_name].source.path
+        save_folder = os.path.dirname(save_path)
+        img_name = os.path.splitext(os.path.basename(save_path))[0]
+
+        # load/create annotation specified in settings
         if self.le_annot_classes.text() is not None:
-            self.adding_multiple_labels = True
-
-            # load any saved annotations
-
-            image_layer_name = self.cb_image_layers.currentText()
-            save_path = self.viewer.layers[image_layer_name].source.path
-            save_folder = os.path.dirname(save_path)
-            img_name = os.path.splitext(os.path.basename(save_path))[0]
-            saved_tifs = os.path.join(save_folder, f"{img_name}_*.tif")
-            for fp in glob.glob(saved_tifs):
-                name = os.path.splitext(os.path.basename(fp))[0].split("_")[-1]
-                im = tifffile.imread(fp)
-                self.viewer.add_labels(im, name=name)
-
             annot_classes = self.le_annot_classes.text().strip().split(",")
-            viewer_layers = [l.name for l in self.viewer.layers]
             for name in annot_classes:
-                # if already loaded, move to end of labels list
-                if name in viewer_layers:
-                    self.viewer.layers.move(viewer_layers.index(name), -1)
+                # load existing saved labels layer
+                fp = os.path.join(save_folder, f"{img_name}_{name}.tif")
+                if os.path.exists(fp):
+                    im = tifffile.imread(fp)
+                    self.viewer.add_labels(im, name=name)
                 # create empty labels layer
                 else:
                     current_image_layer = self.viewer.layers[
@@ -957,7 +952,17 @@ class SamWidget(QWidget):
                     self.viewer.add_labels(
                         np.zeros(current_image_layer.data.shape,
                                  dtype='uint8'), name=name)
-            self.adding_multiple_labels = False
+
+        # load any other saved annotations not already loaded into viewer
+        saved_tifs = os.path.join(save_folder, f"{img_name}_*.tif")
+        viewer_layers = [l.name for l in self.viewer.layers]
+        for fp in glob.glob(saved_tifs):
+            name = os.path.splitext(os.path.basename(fp))[0].split("_")[-1]
+            if name not in viewer_layers:
+                im = tifffile.imread(fp)
+                self.viewer.add_labels(im, name=name)
+
+        self.adding_multiple_labels = False
 
         self._activate()
 
@@ -1845,7 +1850,7 @@ class SamWidget(QWidget):
         print("---------------------")
 
     #function for measuring annotations (manual annotating)
-    def _measure(self):#########################################WORKING ON THIS - INCOMPLETE
+    def _measure(self):
         print("measure")
         all_label_layers = [x for x in self.viewer.layers
                             if isinstance(x, napari.layers.Labels)]
