@@ -200,7 +200,7 @@ class SamWidget(QDialog):
 
     def SAMTabUI(self):
         self.layer_types = {"image": napari.layers.image.image.Image, "labels": napari.layers.labels.labels.Labels}
-        tab = QTabWidget()
+        tab = QWidget()
         layout = QVBoxLayout()
 
         l_model_type = QLabel("Select model type:")
@@ -401,6 +401,7 @@ class SamWidget(QDialog):
 
         # user writes down segmentation classes
         l_annot_classes = QLabel("List of labels to segment (comma separated NO SPACE)")
+        l_annot_classes.setWordWrap(True)
         l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2). "
                                    "Do not use extra space after comma. "
                                    "Do not use \"-\" "
@@ -415,6 +416,7 @@ class SamWidget(QDialog):
         self.l_annotation_settings.addWidget(self.le_annot_classes)
 
         l_embedding_fp = QLabel("Folder containing presaved image embeddings")
+        l_embedding_fp.setWordWrap(True)
         self.l_annotation_settings.addWidget(l_embedding_fp)
         self.le_embedding_fp = QLineEdit()
         self.le_embedding_fp.setText("")
@@ -429,6 +431,7 @@ class SamWidget(QDialog):
         self.l_output_settings = QVBoxLayout()
 
         l_metadata_fp = QLabel("Filepath for image information spreadsheet")
+        l_metadata_fp.setWordWrap(True)
         # l_annot_classes.setToolTip("Separate labels with , only (e.g. Label1,Label2) - do not use extra space after comma")
         self.l_output_settings.addWidget(l_metadata_fp)
         self.le_metadata_fp = QLineEdit()
@@ -438,6 +441,7 @@ class SamWidget(QDialog):
         self.l_output_settings.addWidget(self.le_metadata_fp)
 
         l_collated_metrics_fp = QLabel("Filepath for collated output metrics files (optional)")
+        l_collated_metrics_fp.setWordWrap(True)
         self.l_output_settings.addWidget(l_collated_metrics_fp)
         self.le_collated_metrics_fp = QLineEdit()
         #validator_csv = QValidator()
@@ -447,6 +451,7 @@ class SamWidget(QDialog):
         self.l_output_settings.addWidget(self.le_collated_metrics_fp)
 
         self.l_percentage_of_annot = QLabel("Label to record other labels as a percentage of (optional)")
+        self.l_percentage_of_annot.setWordWrap(True)
         self.l_output_settings.addWidget(self.l_percentage_of_annot)
         self.le_percentage_of_annot = QLineEdit()
         #self.cb_label_layers_percentage_of = QComboBox()
@@ -456,6 +461,7 @@ class SamWidget(QDialog):
 
         self.l_percentage_of_annot_label = QLabel(
             "Paint number of label to record other labels as a pecentage of (optional integer). If ALL or blank will consider all paint numbers.")
+        self.l_percentage_of_annot_label.setWordWrap(True)
         self.l_output_settings.addWidget(self.l_percentage_of_annot_label)
         self.le_percentage_of_annot_label = QLineEdit()
         # self.cb_label_layers_percentage_of = QComboBox()
@@ -466,6 +472,7 @@ class SamWidget(QDialog):
 
         self.l_mindist_label = QLabel(
             "Label to calculate min distance from other labels, with optional =[INTEGER] to specify paint number of label to use")
+        self.l_mindist_label.setWordWrap(True)
         self.l_output_settings.addWidget(self.l_mindist_label)
         self.le_mindist_label = QLineEdit()
         self.settings_tab_cache['le_mindist_label'] = self.le_mindist_label
@@ -936,7 +943,7 @@ class SamWidget(QDialog):
 
     def _add_annot_layers_activate(self):
 
-        # autocontrast everything
+        # autocontrast image layers
         image_layers = [x for x in self.viewer.layers if
                         isinstance(x, napari.layers.Image)]
         for l in image_layers:
