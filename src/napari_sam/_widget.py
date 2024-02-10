@@ -169,7 +169,7 @@ class SamWidget(QDialog):
         # tabs.addTab(self.IOTabUI(), "I/O")
         main_layout.addWidget(tabs)
         self.setLayout(main_layout)
-        
+
         self.label_layer = None
         self.label_layer_changes = None
         self.label_color_mapping = None
@@ -936,6 +936,15 @@ class SamWidget(QDialog):
 
     def _add_annot_layers_activate(self):
 
+        # autocontrast everything
+        image_layers = [x for x in self.viewer.layers if
+                        isinstance(x, napari.layers.Image)]
+        for l in image_layers:
+            l._keep_auto_contrast = True
+        print(
+            f"All image layers are on continuous contrast: {[l.name for l in image_layers]}")
+
+        # add annot layers
         self.adding_multiple_labels = True
 
         image_layer_name = self.cb_image_layers.currentText()
