@@ -988,7 +988,6 @@ class SamWidget(QDialog):
                 self.viewer.add_labels(im, name=name)
 
         self.adding_multiple_labels = False
-        self.btn_finish_distal.setEnabled(True)
         self.btn_finish_image.setEnabled(True)
 
         self._activate()
