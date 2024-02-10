@@ -582,6 +582,8 @@ class SamWidget(QDialog):
 
     def _on_finish_image(self):
         print("FINISH IMAGE BUTTON PRESSED")
+        if self.is_active:
+            self._deactivate()
         self._save_labels()
         self._measure()
         # generate graphs
