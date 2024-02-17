@@ -450,7 +450,7 @@ class SamWidget(QDialog):
         self.settings_tab_cache['le_collated_metrics_fp'] = self.le_collated_metrics_fp
         self.l_output_settings.addWidget(self.le_collated_metrics_fp)
 
-        self.l_percentage_of_annot = QLabel("Label to record other labels as a percentage of (optional)")
+        self.l_percentage_of_annot = QLabel("Label(s) to record other label areas as a percentage of (optional)")
         self.l_percentage_of_annot.setWordWrap(True)
         self.l_output_settings.addWidget(self.l_percentage_of_annot)
         self.le_percentage_of_annot = QLineEdit()
