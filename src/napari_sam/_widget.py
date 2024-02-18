@@ -557,11 +557,13 @@ class SamWidget(QDialog):
                 self._deactivate()
                 # switch output to that labels layer
                 self.cb_label_layers.setCurrentText(current_layer.name)
+                self.label_layer = current_layer
                 self._activate()
 
             # activate if not yet active and not adding initial set of layers
             elif (not self.is_active) and (not self.adding_multiple_labels):
                 self.cb_label_layers.setCurrentText(current_layer.name)
+                self.label_layer = current_layer
             #    self._activate()
 
     def select_layer_while_active(self, layer):
