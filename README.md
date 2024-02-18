@@ -172,7 +172,8 @@ enter (so no need to enter them each time you open the plugin).
   (e.g. _graft-host=2_ means all 
   label objects would have distance from the label 2 in _graft-host_ (so the host)
   calculated in the metrics. _nephron_ means all objects would have closest 
-  distance to any _nephron_ object measured)
+  distance to any _nephron_ object measured). Note only one label can be 
+  specified.
 * `In each annotated slice, record non-empty label layers only`: If ticked, 
   the slice sheet of the resulting excel document will exclude all labels 
   layers that are not annotated for that slice. If you have labels 

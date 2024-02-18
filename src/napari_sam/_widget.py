@@ -1826,7 +1826,7 @@ class SamWidget(QDialog):
 
     #function for measuring annotations (manual annotating)
     def _measure(self):
-        print("measure")
+        print("Measuring...")
         all_label_layers = [x for x in self.viewer.layers
                             if isinstance(x, napari.layers.Labels)]
         object_output_dfs = []
@@ -1851,13 +1851,14 @@ class SamWidget(QDialog):
             if "=" in self.le_mindist_label.text():
                 mindist_layer_name, mindist_layer_i = self.le_mindist_label.text().strip().split(
                     "=")
+                mindist_layer_i = int(mindist_layer_i)
                 mindist_layer = self.viewer.layers[mindist_layer_name].data
                 # make background nonzero for euclidean transform
                 mindist_layer = np.where(mindist_layer == 0,
                                          np.max(mindist_layer) + 1,
                                          mindist_layer)
                 # make specified mindist layer label zero e.g. host
-                mindist_layer = np.where(mindist_layer == int(mindist_layer_i),
+                mindist_layer = np.where(mindist_layer == mindist_layer_i,
                                          0,
                                          mindist_layer)
             else:
@@ -1892,7 +1893,7 @@ class SamWidget(QDialog):
 
             if self.le_mindist_label.text() != "":
                 from scipy import ndimage
-                euclidean_dist_to_host = ndimage.distance_transform_edt(
+                euclidean_dist_to_label = ndimage.distance_transform_edt(
                     mindist_layer[z, ...])
 
             for label_layer in all_label_layers:
@@ -1932,7 +1933,7 @@ class SamWidget(QDialog):
 
                 object_ids = []
                 object_areas = []
-                min_dist_to_host = []
+                min_dist_to_label = []
 
                 for i in range(1, np.max(label_layer_data) + 1):
                     area = (label_layer_data == i).sum()
@@ -1944,14 +1945,17 @@ class SamWidget(QDialog):
 
                     if self.le_mindist_label.text() != "":
                         mindist_labels = mindist_layer_name.split("-")
-                        if not any([x in label_layer.name for x in mindist_labels]):  # exclude measuring distance between right object
+                        mindist_label_name = mindist_labels[0]
+                        if not any([x in label_layer.name for x in mindist_labels]):
+                        # exclude measuring distance between specificed labels objects as will be 0
                             mindist = np.min(
-                                euclidean_dist_to_host[(label_layer_data == i)])
+                                euclidean_dist_to_label[(label_layer_data == i)])
                             # note that euclidean distance is from pixel centre
                             # so neighbouring pixels have distance 1, diagnoal pixels distance sqrt(2)
-                            min_dist_to_host.append(mindist)
+                            min_dist_to_label.append(mindist)
+                            mindist_label_name = mindist_labels[mindist_layer_i - 1]
                         else:
-                            min_dist_to_host.append("NA")
+                            min_dist_to_label.append("NA")
 
                 # check if metadata record exists and if so read in
                 if image_name in self.metadata.keys():
@@ -1969,7 +1973,7 @@ class SamWidget(QDialog):
                 object_output_df["object ID"] = object_ids
                 object_output_df["pixel area"] = object_areas
                 object_output_df[
-                    "min euclidean distance from host"] = min_dist_to_host
+                    f"min euclidean distance from {mindist_label_name}"] = min_dist_to_label
                 if percentage_of_annot != "":
                     for percentage_annot,slice_area in percentage_of_annot_slice_area.items():
                         object_output_df[f"% {percentage_annot} pixel area"] = [100*o/slice_area for o in object_areas]
