@@ -102,7 +102,8 @@ labels to segment` and then activate SAM annotation mode. Alternatively you can
 
 6. Once you've finished annotating the image, click `Finished annotating image` 
    to save all labels layers in same folder as image was loaded from, 
-   create an excel file metrics about annotated objects and slices (which 
+   create an excel file with metrics about the annotated objects and slices 
+   (which 
    can be 
    customised in 
    the `Settings` tab) and clear all current layers - so you're ready to drag 
@@ -147,7 +148,8 @@ enter (so no need to enter them each time you open the plugin).
   include a column with the heading "Image" containing the image name 
   without the file extension (e.g. _cells3d_ NOT _cells3d.png_)
 * `Filepath for collated output metric files`: If you want all metrics from 
-  all images you ever annotate to be saved to the same xlsx file then enter 
+  all images you ever annotate to be saved to the same excel (.xlsx) file then 
+  enter 
   the folder that you want to contain the xlsx file here.
 * `Label(s) to record other label areas as a percentage of`: Optional label 
   name 
@@ -171,6 +173,11 @@ enter (so no need to enter them each time you open the plugin).
   label objects would have distance from the label 2 in _graft-host_ (so the host)
   calculated in the metrics. _nephron_ means all objects would have closest 
   distance to any _nephron_ object measured)
+* `In each annotated slice, record non-empty label layers only`: If ticked, 
+  the slice sheet of the resulting excel document will exclude all labels 
+  layers that are not annotated for that slice. If you have labels 
+  that are not represented in some image slices, leave this unticked so that 
+  their area of 0 will be recorded for those slices.
 
 The xlsx files generated can be used to create graphs.
 

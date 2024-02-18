@@ -478,6 +478,14 @@ class SamWidget(QDialog):
         self.settings_tab_cache['le_mindist_label'] = self.le_mindist_label
         self.l_output_settings.addWidget(self.le_mindist_label)
 
+        self.l_measure_empty_labels_slice = QLabel("In each annotated slice, record non-empty label layers only")
+        self.l_measure_empty_labels_slice.setWordWrap(True)
+        self.l_output_settings.addWidget(self.l_measure_empty_labels_slice)
+        self.b_measure_empty_labels_slice = QCheckBox()
+        self.b_measure_empty_labels_slice.setChecked(False)
+        self.settings_tab_cache['b_measure_empty_labels_slice'] = self.b_measure_empty_labels_slice
+        self.l_output_settings.addWidget(self.b_measure_empty_labels_slice)
+
         self.g_output_settings.setLayout(self.l_output_settings)
         layout.addWidget(self.g_output_settings)
 
@@ -499,6 +507,8 @@ class SamWidget(QDialog):
                 w.setText(val)
             elif isinstance(w, QComboBox):
                 w.setCurrentText(val)
+            elif isinstance(w, QCheckBox):
+                w.setChecked(eval(val.capitalize())) #convert val to boolean
             else:
                 raise Warning("Settings tab has widget type that not currently supported for caching")
     
@@ -522,6 +532,8 @@ class SamWidget(QDialog):
                 val = w.text()
             elif isinstance(w, QComboBox):
                 val = w.currentText()
+            elif isinstance(w, QCheckBox):
+                val = w.isChecked()
             else:
                 raise Warning("Settings tab has widget type that not currently supported for caching")
             self.setting_variables.setValue(
@@ -1812,72 +1824,6 @@ class SamWidget(QDialog):
             print("saved:", save_file)
             layer.save(save_file)
 
-    def _measure_2Dlabels(self):
-        """
-        Measuring annotations on 2D SAM labels
-        """
-
-        all_label_layers = [x for x in self.viewer.layers if
-                            isinstance(x, napari.layers.Labels)]
-
-        image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
-        image_name = os.path.basename(image_layer.source.path)
-        print("---------------------")
-        print(f"IMAGE: {image_name}")
-
-        # find info for this image if it was specified in csv
-
-        if self.le_collated_metrics_fp.text().strip():
-            image_info = self.info_df[self.info_df["Image"] == image_name]
-            if image_info.shape[0] != 1:
-                print("WARNING: No or more than one matching Image name in "
-                              "input info csv so will NOT output metrics file or graphs")
-                return
-            image_output_dfs = []
-
-        print(f"Z slice: {self.sam2D_z}")
-        for label_layer in all_label_layers:
-            labels = np.array(label_layer.data)
-            if labels.max()==0:
-                continue
-            print(f"Label : {label_layer.name}")
-            object_ids = []
-            object_areas = []
-            sum = 0
-
-            for i in range(1,labels.max()+1):
-                area = (labels == i).sum()
-                if area > 0:
-                    object_ids.append(i)
-                    object_areas.append(area)
-                    print (f"   objectID {i}: {area}")
-                    sum += area
-            print(f"   TOTAL AREA: {sum}")
-
-            # add to output csv
-            if self.le_collated_metrics_fp.text().strip():
-                shape = "x".join([str(x) for x in self.viewer.layers[
-                    0].data.shape])
-                print("shape", shape)
-                image_output_df = image_info.loc[np.repeat(image_info.index, \
-                                                                 len(object_ids))]
-                image_output_df["image_res"] = shape
-                image_output_df["z"] = self.sam2D_z
-                image_output_df["measure"] = label_layer.name
-                image_output_df["object ID"] = object_ids
-                image_output_df["pixel area"] = object_areas
-                image_output_dfs.append(image_output_df)
-
-        if self.le_collated_metrics_fp.text().strip():
-            output_df = pd.concat(image_output_dfs)
-            output_fp = self.output_csv_filepath.text().strip()
-            output_df.to_csv(output_fp, mode='a', header=(not os.path.exists(
-                output_fp)), index=False) # doesn't include header
-            # if csv file already exists
-            print("Measurements saved to:", output_fp)
-
-        print("---------------------")
-
     #function for measuring annotations (manual annotating)
     def _measure(self):
         print("measure")
@@ -1957,9 +1903,10 @@ class SamWidget(QDialog):
                 elif image_layer.ndim == 2:
                     label_layer_data = label_layer.data
 
-                if label_layer_data.sum() <= 0: # skips layers with no label annotation
-                    continue
-                #annotated_z.append(z)
+                if self.b_measure_empty_labels_slice.isChecked():
+                    if label_layer_data.sum() <= 0: # skips layers with no label annotation
+                        continue
+                    #annotated_z.append(z)
 
                 # label slice sums considering possible dash in label name to
                 # indicate different classes in one layer
