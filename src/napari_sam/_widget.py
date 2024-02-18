@@ -955,8 +955,9 @@ class SamWidget(QDialog):
 
         # add annot layers
         self.adding_multiple_labels = True
-
         image_layer_name = self.cb_image_layers.currentText()
+        if not image_layer_name:
+            raise ValueError("No image open: load image into viewer before adding annotation layers.")
         save_path = self.viewer.layers[image_layer_name].source.path
         save_folder = os.path.dirname(save_path)
         img_name = os.path.splitext(os.path.basename(save_path))[0]
