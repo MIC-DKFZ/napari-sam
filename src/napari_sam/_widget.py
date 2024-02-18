@@ -1861,11 +1861,15 @@ class SamWidget(QDialog):
                 mindist_layer = np.where(mindist_layer == mindist_layer_i,
                                          0,
                                          mindist_layer)
+                mindist_labels = mindist_layer_name.split("-")
+                mindist_label_name = mindist_labels[mindist_layer_i - 1]
             else:
                 mindist_layer_name = self.le_mindist_label.text().strip()
                 mindist_layer = self.viewer.layers[mindist_layer_name].data
                 # make mindist layer label zero and background nonzero
                 mindist_layer = np.logical_not(mindist_layer)
+                mindist_labels = mindist_layer_name.split("-")
+                mindist_label_name = mindist_labels[0]
 
         #print(annotated_z)
         for z in annotated_z:#range(0, self.image_layer_name.shape[0]):
@@ -1935,6 +1939,7 @@ class SamWidget(QDialog):
                 object_areas = []
                 min_dist_to_label = []
 
+                # per object
                 for i in range(1, np.max(label_layer_data) + 1):
                     area = (label_layer_data == i).sum()
                     if area <= 0: # skips label values with no annotation
@@ -1943,9 +1948,8 @@ class SamWidget(QDialog):
                     object_areas.append(area)
                     #print(f"    objectID {i}: {area}")
 
+                    # mindist calculation
                     if self.le_mindist_label.text() != "":
-                        mindist_labels = mindist_layer_name.split("-")
-                        mindist_label_name = mindist_labels[0]
                         if not any([x in label_layer.name for x in mindist_labels]):
                         # exclude measuring distance between specificed labels objects as will be 0
                             mindist = np.min(
@@ -1953,7 +1957,6 @@ class SamWidget(QDialog):
                             # note that euclidean distance is from pixel centre
                             # so neighbouring pixels have distance 1, diagnoal pixels distance sqrt(2)
                             min_dist_to_label.append(mindist)
-                            mindist_label_name = mindist_labels[mindist_layer_i - 1]
                         else:
                             min_dist_to_label.append("NA")
 
