@@ -40,6 +40,14 @@ class BboxState(Enum):
     DRAG = 1
     RELEASE = 2
 
+
+class Backend(Enum):
+    GPU = 0
+    MPS = 1
+    CPU = 2
+BACKEND = Backend.CPU # TODO: make GPU later
+
+
 SAM_MODELS = {
     "default": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
     "vit_h": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
@@ -57,13 +65,13 @@ class SamWidget(QWidget):
         self.annotator_mode = AnnotatorMode.NONE
         self.segmentation_mode = SegmentationMode.SEMANTIC
 
-        if not torch.cuda.is_available():
-            if not torch.backends.mps.is_available():
-                self.device = "cpu"
-            else:
-                self.device = "mps"
-        else:
+        
+        if BACKEND == Backend.GPU and torch.cuda.is_available():
             self.device = "cuda"
+        elif BACKEND == Backend.MPS and torch.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
 
         main_layout = QVBoxLayout()
 
