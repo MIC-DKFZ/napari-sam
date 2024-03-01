@@ -273,8 +273,6 @@ class SamWidget(QWidget):
         self.old_points = np.zeros(0)
         self.point_size = 10
         self.le_point_size.setText(str(self.point_size))
-        self.bbox_layer = None
-        self.bbox_layer_name = "Ignore this layer2"
         self.bbox_overlay = None
         self.bbox_node = None
         
@@ -590,9 +588,7 @@ class SamWidget(QWidget):
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
-            self.bbox_overlay = self._get_bbox_overlay_and_node()
-            print(self.bbox_node)
-            #self.bbox_node._edge_color = (1, 0, 0, 1)
+            self.bbox_overlay, self.bbox_node = self._get_bbox_overlay_and_node()
 
             self.label_layer_changes = None
             # Fixes shape adjustment by napari
@@ -659,7 +655,6 @@ class SamWidget(QWidget):
                 selected_layer = None
                 if self.viewer.layers.selection.active != self.points_layer:
                     selected_layer = self.viewer.layers.selection.active
-                self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
                 if selected_layer is not None:
                     self.viewer.layers.selection.active = selected_layer
                 if self.image_layer.ndim == 3:
@@ -669,7 +664,6 @@ class SamWidget(QWidget):
                     self.update_bbox_layer({}, bbox_tmp=None)
                     self.viewer.dims.set_point(0, 0)
                     self.viewer.dims.set_point(0, pos[0])
-                self.bbox_layer.editable = False
                 self.bbox_first_coords = None
                 self.prev_segmentation_mode = SegmentationMode.SEMANTIC
 
@@ -769,7 +763,6 @@ class SamWidget(QWidget):
         self.label_layer = None
         self.label_layer_changes = None
         self.points_layer = None
-        self.bbox_layer = None
         self.bbox_first_coords = None
         self.annotator_mode = AnnotatorMode.NONE
         self.points = defaultdict(list)
@@ -795,8 +788,7 @@ class SamWidget(QWidget):
                 vispy_overlay = value
         node = vispy_overlay.node
         node.line.set_data(color="steelblue", width=self.bbox_edge_width)
-        #overlay._line_color = "steelblue"
-        return overlay
+        return overlay, node
 
     def _switch_mode(self):
         if self.annotator_mode == AnnotatorMode.CLICK:
@@ -1026,7 +1018,6 @@ class SamWidget(QWidget):
 
             bbox_final = np.rint(bbox_final).astype(np.int32)
             self.bboxes[new_label].append(bbox_final)
-            self.update_bbox_layer(self.bboxes)
 
             prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final), x_coord=x_coord)
 
@@ -1196,24 +1187,11 @@ class SamWidget(QWidget):
 
     def update_bbox_layer(self, bboxes, bbox_tmp=None):
         self.bbox_edge_width = int(self.le_bbox_edge_width.text())
-        bboxes_flattened = []
-        edge_colors = []
-        for _, bbox in bboxes.items():
-            bboxes_flattened.extend(bbox)
-            edge_colors.extend(['skyblue'] * len(bbox))
+        self.bbox_node.line.set_data(color="steelblue", width=self.bbox_edge_width)
         if bbox_tmp is not None:
-            bboxes_flattened.append(bbox_tmp)
-            edge_colors.append('steelblue')
             p0 = bbox_tmp[0]
             p1 = bbox_tmp[2]
-            #self.bbox_overlay.line_thickness = self.bbox_edge_width
             self.bbox_overlay.bounds = ((p0[0], p0[1]), (p1[0], p1[1]))
-        #self.bbox_layer.data = bboxes_flattened
-        #self.bbox_layer.edge_width = [self.bbox_edge_width] * len(bboxes_flattened)
-        #self.bbox_layer.edge_color = edge_colors
-        # nself.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
-
-
 
     def find_changed_point(self, old_points, new_points):
         if len(new_points) == 0:
