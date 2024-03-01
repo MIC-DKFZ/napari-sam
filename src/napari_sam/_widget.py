@@ -201,7 +201,7 @@ class SamWidget(QWidget):
         self.check_live_view = QCheckBox('Live View')
         self.check_live_view.setEnabled(False)
         self.check_live_view.setChecked(True)
-        self.live_on = True
+        self.check_live_view.clicked.connect(self._toggle_live_view)
         main_layout.addWidget(self.check_live_view)
 
         container_widget_info = QWidget()
@@ -1452,6 +1452,10 @@ class SamWidget(QWidget):
                 cached_weight_types[model_type] = False
 
         return cached_weight_types
+
+    def _toggle_live_view(self):
+        if not self.check_live_view.isChecked():
+            self.live_overlay_visual.remove_current()
 
     # def _myfilter(self, row, parent):
     #     return "<hidden>" not in self.viewer.layers[row].name
