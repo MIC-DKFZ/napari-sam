@@ -23,6 +23,8 @@ import os
 from os.path import join
 
 from napari.components.overlays.interaction_box import SelectionBoxOverlay
+from napari_sam._live_overlay import add_custom_overlay
+from time import time
 
 class AnnotatorMode(Enum):
     NONE = 0
@@ -290,6 +292,9 @@ class SamWidget(QWidget):
         self.point_label = None
 
         self.bboxes = defaultdict(list)
+
+        self.live_overlay_t = time()
+        self.live_timeout_s = 0.8
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
@@ -589,6 +594,8 @@ class SamWidget(QWidget):
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
             self.bbox_overlay, self.bbox_node = self._get_bbox_overlay_and_node()
+            self.live_overlay_model, self.live_overlay_visual = add_custom_overlay(self.image_layer, self.viewer)
+            self.live_overlay_visual._add_widget(self)
 
             self.label_layer_changes = None
             # Fixes shape adjustment by napari
@@ -703,6 +710,7 @@ class SamWidget(QWidget):
                 self.update_points_layer(None)
 
                 self.viewer.mouse_drag_callbacks.append(self.callback_click)
+                self.viewer.mouse_move_callbacks.append(self.callback_move)
                 self.viewer.keymap['Delete'] = self.on_delete
                 self.label_layer.keymap['Control-Z'] = self.on_undo
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
@@ -867,6 +875,29 @@ class SamWidget(QWidget):
                 data_coordinates = self.image_layer.world_to_data(event.position)
                 coords = np.round(data_coordinates).astype(int)
                 self.do_bbox_click(coords, BboxState.RELEASE)
+    
+    def callback_move(self, layer, event):
+        current_t = time()
+        # avoid over-requesting to SAM
+        if current_t - self.live_overlay_t < self.live_timeout_s:
+            return
+        y, x = int(event.position[0]), int(event.position[1])
+        if self.annotator_mode == AnnotatorMode.CLICK:
+            points = copy.deepcopy(self.points)
+            points[1].append((y, x))
+            points_flattened = []
+            labels_flattended = []
+            for label, label_points in points.items():
+                points_flattened.extend(label_points)
+                label = int(label == 1)
+                labels = [label] * len(label_points)
+                labels_flattended.extend(labels)
+            prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(x))
+            #prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(current_point[0]))
+            self.live_overlay_visual.draw_mask(prediction)
+    
+    
+
 
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
@@ -1010,6 +1041,9 @@ class SamWidget(QWidget):
                 raise RuntimeError("Only 2D and 3D images are supported.")
             bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
             self.update_bbox_layer(self.bboxes, bbox_tmp=bbox_tmp)
+            #prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final), x_coord=x_coord)
+            # TODO: add call to custom overlay
+
         else:
             self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
             if self.image_layer.ndim == 2:
