@@ -18,6 +18,7 @@ import napari
 import numpy as np
 from time import time
 from copy import copy
+import warnings
 
 from typing import Tuple
 
@@ -51,6 +52,10 @@ class VispyImageOverlay(LayerOverlayMixin, VispyBaseOverlay):
     ) -> Tuple[np.ndarray, Tuple[int, int]]:
         """Draw bbox round whole mask and crop to it. Return offset as well to translate node later."""
         y_nonzero, x_nonzero = np.nonzero(whole_mask)
+        # in case of no response from SAM mask, draw nothing
+        if len(y_nonzero) == 0 or len(x_nonzero) == 0:
+            return np.zeros((10, 10)), (0, 0)
+
         x_min, x_max = np.amin(x_nonzero), np.amax(x_nonzero)
         y_min, y_max = np.amin(y_nonzero), np.amax(y_nonzero)
         return whole_mask[y_min:y_max, x_min:x_max], (x_min, y_min)  # type: ignore
@@ -105,33 +110,35 @@ def add_custom_overlay(
     :return: the overlay model (napari layer) and associated vispy overlay
     :rtype: Tuple[ImageOverlay, VispyImageOverlay]
     """
-    vispy_layer = viewer.window._qt_viewer.canvas.layer_to_visual[layer]
-    custom_overlay_model = ImageOverlay()
-    custom_overlay_visual = VispyImageOverlay(
-        layer=layer, overlay=custom_overlay_model, parent=viewer
-    )
-    vispy_layer.overlays[custom_overlay_model] = custom_overlay_visual
-    viewer.window._qt_viewer.canvas._overlay_to_visual[
-        custom_overlay_model
-    ] = custom_overlay_visual
-    layer._overlays["live_SAM"] = custom_overlay_model
-    custom_overlay_visual.node.parent = vispy_layer.node
-    custom_overlay_model.enabled = True
-    custom_overlay_model.visible = True
-    custom_overlay_visual.reset() # this is necessary
-    vispy_layer._on_matrix_change()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        vispy_layer = viewer.window._qt_viewer.canvas.layer_to_visual[layer]
+        custom_overlay_model = ImageOverlay()
+        custom_overlay_visual = VispyImageOverlay(
+            layer=layer, overlay=custom_overlay_model, parent=viewer
+        )
+        vispy_layer.overlays[custom_overlay_model] = custom_overlay_visual
+        viewer.window._qt_viewer.canvas._overlay_to_visual[
+            custom_overlay_model
+        ] = custom_overlay_visual
+        layer._overlays["live_SAM"] = custom_overlay_model
+        custom_overlay_visual.node.parent = vispy_layer.node
+        custom_overlay_model.enabled = True
+        custom_overlay_model.visible = True
+        custom_overlay_visual.reset() # this is necessary
+        vispy_layer._on_matrix_change()
 
-    # per attribute transform copying - just using deepcopy or copy on the TransformSystem
-    # itself doesn't work (canvas will follow the node transforms)
-    p_sys: TransformSystem = custom_overlay_visual.node.parent.transforms
-    c_sys = TransformSystem(p_sys.canvas)
-    c_sys.canvas_transform = copy(p_sys.canvas_transform)
-    c_sys.scene_transform = copy(p_sys.scene_transform)
-    c_sys.visual_transform = copy(p_sys.visual_transform)
-    c_sys.dpi = p_sys.dpi
-    c_sys.framebuffer_transform = copy(p_sys.framebuffer_transform)
-    c_sys.document_transform = copy(p_sys.document_transform)
-    custom_overlay_visual.node.transforms = c_sys
+        # per attribute transform copying - just using deepcopy or copy on the TransformSystem
+        # itself doesn't work (canvas will follow the node transforms)
+        p_sys: TransformSystem = custom_overlay_visual.node.parent.transforms
+        c_sys = TransformSystem(p_sys.canvas)
+        c_sys.canvas_transform = copy(p_sys.canvas_transform)
+        c_sys.scene_transform = copy(p_sys.scene_transform)
+        c_sys.visual_transform = copy(p_sys.visual_transform)
+        c_sys.dpi = p_sys.dpi
+        c_sys.framebuffer_transform = copy(p_sys.framebuffer_transform)
+        c_sys.document_transform = copy(p_sys.document_transform)
+        custom_overlay_visual.node.transforms = c_sys
     return custom_overlay_model, custom_overlay_visual
 
 # when we add the custom overlay, this will trigger an event in the layer that tries to add a vispy overlay from

@@ -794,11 +794,13 @@ class SamWidget(QWidget):
         :return: napari overlay model and vispy node
         :rtype: _type_
         """
-        # private attribute access for overlays which causes warning
-        overlay = self.label_layer._overlays['selection_box']
-        overlay.visible = True
-        # as far as I can tell this is the only way to get the vispy layer for a napari layer
-        vispy_layer = self.viewer.window._qt_viewer.canvas.layer_to_visual[self.label_layer]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            # private attribute access for overlays which causes warning
+            overlay = self.label_layer._overlays['selection_box']
+            overlay.visible = True
+            # as far as I can tell this is the only way to get the vispy layer for a napari layer
+            vispy_layer = self.viewer.window._qt_viewer.canvas.layer_to_visual[self.label_layer]
         # we loop over each vispy overlay in the vispy layers and return the one that is a SelectionBoxOverlay
         for key, value in vispy_layer.overlays.items():
             if type(key) == SelectionBoxOverlay:
@@ -893,12 +895,12 @@ class SamWidget(QWidget):
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
             prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(x))
-            #prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(current_point[0]))
-            self.live_overlay_visual.draw_mask(prediction)
+            label_n = self.label_layer.selected_label
+            color = self.label_layer.colormap.colors[label_n]
+            color[3] = 0.4
+            color = tuple([int(255* i) for i in color])
+            self.live_overlay_visual.draw_mask(prediction, color)
     
-    
-
-
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
@@ -1041,8 +1043,17 @@ class SamWidget(QWidget):
                 raise RuntimeError("Only 2D and 3D images are supported.")
             bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
             self.update_bbox_layer(self.bboxes, bbox_tmp=bbox_tmp)
-            #prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final), x_coord=x_coord)
-            # TODO: add call to custom overlay
+            
+            current_t = time()
+            if current_t - self.live_overlay_t < self.live_timeout_s or len(bbox_tmp) < 4:
+                return
+            label_n = self.label_layer.selected_label
+            color = self.label_layer.colormap.colors[label_n]
+            color[3] = 0.4
+            color = tuple([int(255* i) for i in color])
+            x_coord = self.bbox_first_coords[0]
+            prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_tmp), x_coord=x_coord)
+            self.live_overlay_visual.draw_mask(prediction, color)
 
         else:
             self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
