@@ -894,6 +894,8 @@ class SamWidget(QWidget):
         # avoid over-requesting to SAM
         if current_t - self.live_overlay_t < self.live_timeout_s:
             return
+        if self.image_layer.ndim != 2:
+            return
         y, x = int(event.position[0]), int(event.position[1])
         if self.annotator_mode == AnnotatorMode.CLICK and self.check_live_view.isChecked():
             points = copy.deepcopy(self.points)
@@ -905,7 +907,7 @@ class SamWidget(QWidget):
                 label = int(label == 1)
                 labels = [label] * len(label_points)
                 labels_flattended.extend(labels)
-            prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(x))
+            prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(x)) # TODO: doesn't work in ndim=3
             label_n = self.label_layer.selected_label
             color = self.label_layer.colormap.colors[label_n]
             color[3] = 0.4
