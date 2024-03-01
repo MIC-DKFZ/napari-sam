@@ -22,6 +22,8 @@ from pathlib import Path
 import os
 from os.path import join
 
+from napari.components.overlays.interaction_box import SelectionBoxOverlay
+
 class AnnotatorMode(Enum):
     NONE = 0
     CLICK = 1
@@ -273,6 +275,9 @@ class SamWidget(QWidget):
         self.le_point_size.setText(str(self.point_size))
         self.bbox_layer = None
         self.bbox_layer_name = "Ignore this layer2"
+        self.bbox_overlay = None
+        self.bbox_node = None
+        
         self.bbox_edge_width = 10
         self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
@@ -585,6 +590,10 @@ class SamWidget(QWidget):
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
+            self.bbox_overlay = self._get_bbox_overlay_and_node()
+            print(self.bbox_node)
+            #self.bbox_node._edge_color = (1, 0, 0, 1)
+
             self.label_layer_changes = None
             # Fixes shape adjustment by napari
             if self.image_layer.ndim == 3:
@@ -776,6 +785,18 @@ class SamWidget(QWidget):
         self.rb_semantic.setStyleSheet("")
         self.rb_instance.setStyleSheet("")
         self._reset_history()
+    
+    def _get_bbox_overlay_and_node(self):
+        overlay = self.label_layer._overlays['selection_box']
+        overlay.visible = True
+        vispy_layer = self.viewer.window._qt_viewer.canvas.layer_to_visual[self.label_layer]
+        for key, value in vispy_layer.overlays.items():
+            if type(key) == SelectionBoxOverlay:
+                vispy_overlay = value
+        node = vispy_overlay.node
+        node.line.set_data(color="steelblue", width=self.bbox_edge_width)
+        #overlay._line_color = "steelblue"
+        return overlay
 
     def _switch_mode(self):
         if self.annotator_mode == AnnotatorMode.CLICK:
@@ -1183,10 +1204,16 @@ class SamWidget(QWidget):
         if bbox_tmp is not None:
             bboxes_flattened.append(bbox_tmp)
             edge_colors.append('steelblue')
-        self.bbox_layer.data = bboxes_flattened
-        self.bbox_layer.edge_width = [self.bbox_edge_width] * len(bboxes_flattened)
-        self.bbox_layer.edge_color = edge_colors
-        self.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
+            p0 = bbox_tmp[0]
+            p1 = bbox_tmp[2]
+            #self.bbox_overlay.line_thickness = self.bbox_edge_width
+            self.bbox_overlay.bounds = ((p0[0], p0[1]), (p1[0], p1[1]))
+        #self.bbox_layer.data = bboxes_flattened
+        #self.bbox_layer.edge_width = [self.bbox_edge_width] * len(bboxes_flattened)
+        #self.bbox_layer.edge_color = edge_colors
+        # nself.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
+
+
 
     def find_changed_point(self, old_points, new_points):
         if len(new_points) == 0:
