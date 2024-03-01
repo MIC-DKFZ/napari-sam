@@ -48,7 +48,7 @@ class Backend(Enum):
     GPU = 0
     MPS = 1
     CPU = 2
-BACKEND = Backend.CPU # TODO: make GPU later
+BACKEND = Backend.GPU
 
 
 SAM_MODELS = {
@@ -898,6 +898,7 @@ class SamWidget(QWidget):
             return
         y, x = int(event.position[0]), int(event.position[1])
         if self.annotator_mode == AnnotatorMode.CLICK and self.check_live_view.isChecked():
+            # this is (lazily) copied from predict_click
             points = copy.deepcopy(self.points)
             points[1].append((y, x))
             points_flattened = []
@@ -1065,6 +1066,7 @@ class SamWidget(QWidget):
             label_n = self.label_layer.selected_label
             color = self.label_layer.colormap.colors[label_n]
             color[3] = 0.4
+            # overlay expects uint8 format - this assumes colors are rgba tuples and not strings
             color = tuple([int(255* i) for i in color])
             x_coord = self.bbox_first_coords[0]
             prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_tmp), x_coord=x_coord)
