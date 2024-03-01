@@ -72,6 +72,9 @@ class VispyImageOverlay(LayerOverlayMixin, VispyBaseOverlay):
         self.node.transform = STTransform(translate=[x, y])
         self.node.update()
     
+    def remove_current(self) -> None:
+        self.draw_mask(np.zeros((4, 4)), (0, 0, 0, 0))
+    
     def draw_mask(self, mask: np.ndarray, color: Tuple[int, int, int, int] = (255, 0, 0, 100)) -> None:
         cropped_mask, offset = self._get_cropped_mask(mask)
         self._update_img_from_mask(cropped_mask, offset, color)
