@@ -780,12 +780,22 @@ class SamWidget(QWidget):
         self._reset_history()
     
     def _get_bbox_overlay_and_node(self):
+        """Get inbuilt napari selection-box overlay for self.labels_layer and the box node from
+        the associated vispy overlay (so we can edit its colour and width later).
+
+        :return: napari overlay model and vispy node
+        :rtype: _type_
+        """
+        # private attribute access for overlays which causes warning
         overlay = self.label_layer._overlays['selection_box']
         overlay.visible = True
+        # as far as I can tell this is the only way to get the vispy layer for a napari layer
         vispy_layer = self.viewer.window._qt_viewer.canvas.layer_to_visual[self.label_layer]
+        # we loop over each vispy overlay in the vispy layers and return the one that is a SelectionBoxOverlay
         for key, value in vispy_layer.overlays.items():
             if type(key) == SelectionBoxOverlay:
                 vispy_overlay = value
+        # the node is the bbox drawn on the vispy layer
         node = vispy_overlay.node
         node.line.set_data(color="steelblue", width=self.bbox_edge_width)
         return overlay, node
