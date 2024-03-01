@@ -198,6 +198,12 @@ class SamWidget(QWidget):
         self.check_auto_inc_bbox.setChecked(True)
         main_layout.addWidget(self.check_auto_inc_bbox)
 
+        self.check_live_view = QCheckBox('Live View')
+        self.check_live_view.setEnabled(False)
+        self.check_live_view.setChecked(True)
+        self.live_on = True
+        main_layout.addWidget(self.check_live_view)
+
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
 
@@ -657,6 +663,8 @@ class SamWidget(QWidget):
                 self.check_prev_mask.setEnabled(True)
                 self.check_auto_inc_bbox.setEnabled(True)
                 self.check_auto_inc_bbox.setChecked(True)
+                self.check_live_view.setEnabled(True)
+                self.check_live_view.setChecked(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
                 selected_layer = None
@@ -746,6 +754,8 @@ class SamWidget(QWidget):
         self.btn_mode_switch.setText("Switch to BBox Mode")
         self.check_prev_mask.setEnabled(False)
         self.check_auto_inc_bbox.setEnabled(False)
+        self.check_live_view.setEnabled(False)
+        self.check_live_view.setChecked(False)
         self.prev_segmentation_mode = SegmentationMode.SEMANTIC
         self.annotator_mode = AnnotatorMode.CLICK
 
@@ -766,6 +776,7 @@ class SamWidget(QWidget):
             self.viewer.layers.remove(self.points_layer)
         if self.bbox_layer is not None and self.bbox_layer in self.viewer.layers:
             self.viewer.layers.remove(self.bbox_layer)
+        self.live_overlay_model.visible = False
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
@@ -884,7 +895,7 @@ class SamWidget(QWidget):
         if current_t - self.live_overlay_t < self.live_timeout_s:
             return
         y, x = int(event.position[0]), int(event.position[1])
-        if self.annotator_mode == AnnotatorMode.CLICK:
+        if self.annotator_mode == AnnotatorMode.CLICK and self.check_live_view.isChecked():
             points = copy.deepcopy(self.points)
             points[1].append((y, x))
             points_flattened = []
@@ -1046,6 +1057,8 @@ class SamWidget(QWidget):
             
             current_t = time()
             if current_t - self.live_overlay_t < self.live_timeout_s or len(bbox_tmp) < 4:
+                return
+            if not self.check_live_view.isChecked():
                 return
             label_n = self.label_layer.selected_label
             color = self.label_layer.colormap.colors[label_n]
