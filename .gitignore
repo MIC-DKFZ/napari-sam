@@ -84,3 +84,5 @@ venv/
 **/_version.py
 
 tmp.py
+
+*.mypy*

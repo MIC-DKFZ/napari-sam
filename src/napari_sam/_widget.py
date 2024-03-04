@@ -22,6 +22,9 @@ from pathlib import Path
 import os
 from os.path import join
 
+from napari.components.overlays.interaction_box import SelectionBoxOverlay
+from napari_sam._live_overlay import add_custom_overlay
+from time import time
 
 class AnnotatorMode(Enum):
     NONE = 0
@@ -40,6 +43,14 @@ class BboxState(Enum):
     DRAG = 1
     RELEASE = 2
 
+
+class Backend(Enum):
+    GPU = 0
+    MPS = 1
+    CPU = 2
+BACKEND = Backend.GPU
+
+
 SAM_MODELS = {
     "default": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
     "vit_h": {"filename": "sam_vit_h_4b8939.pth", "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth", "model": build_sam_vit_h},
@@ -57,13 +68,13 @@ class SamWidget(QWidget):
         self.annotator_mode = AnnotatorMode.NONE
         self.segmentation_mode = SegmentationMode.SEMANTIC
 
-        if not torch.cuda.is_available():
-            if not torch.backends.mps.is_available():
-                self.device = "cpu"
-            else:
-                self.device = "mps"
-        else:
+        
+        if BACKEND == Backend.GPU and torch.cuda.is_available():
             self.device = "cuda"
+        elif BACKEND == Backend.MPS and torch.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
 
         main_layout = QVBoxLayout()
 
@@ -187,6 +198,12 @@ class SamWidget(QWidget):
         self.check_auto_inc_bbox.setChecked(True)
         main_layout.addWidget(self.check_auto_inc_bbox)
 
+        self.check_live_view = QCheckBox('Live View')
+        self.check_live_view.setEnabled(False)
+        self.check_live_view.setChecked(True)
+        self.check_live_view.clicked.connect(self._toggle_live_view)
+        main_layout.addWidget(self.check_live_view)
+
         container_widget_info = QWidget()
         container_layout_info = QVBoxLayout(container_widget_info)
 
@@ -264,8 +281,9 @@ class SamWidget(QWidget):
         self.old_points = np.zeros(0)
         self.point_size = 10
         self.le_point_size.setText(str(self.point_size))
-        self.bbox_layer = None
-        self.bbox_layer_name = "Ignore this layer2"
+        self.bbox_overlay = None
+        self.bbox_node = None
+        
         self.bbox_edge_width = 10
         self.le_bbox_edge_width.setText(str(self.bbox_edge_width))
 
@@ -280,6 +298,9 @@ class SamWidget(QWidget):
         self.point_label = None
 
         self.bboxes = defaultdict(list)
+
+        self.live_overlay_t = time()
+        self.live_timeout_s = 0.8
 
         # self.viewer.window.qt_viewer.layers.model().filterAcceptsRow = self._myfilter
 
@@ -578,6 +599,10 @@ class SamWidget(QWidget):
             self.image_name = self.cb_image_layers.currentText()
             self.image_layer = self.viewer.layers[self.cb_image_layers.currentText()]
             self.label_layer = self.viewer.layers[self.cb_label_layers.currentText()]
+            self.bbox_overlay, self.bbox_node = self._get_bbox_overlay_and_node()
+            self.live_overlay_model, self.live_overlay_visual = add_custom_overlay(self.image_layer, self.viewer)
+            self.live_overlay_visual._add_widget(self)
+
             self.label_layer_changes = None
             # Fixes shape adjustment by napari
             if self.image_layer.ndim == 3:
@@ -638,12 +663,13 @@ class SamWidget(QWidget):
                 self.check_prev_mask.setEnabled(True)
                 self.check_auto_inc_bbox.setEnabled(True)
                 self.check_auto_inc_bbox.setChecked(True)
+                self.check_live_view.setEnabled(True)
+                self.check_live_view.setChecked(True)
                 self.btn_mode_switch.setText("Switch to BBox Mode")
                 self.annotator_mode = AnnotatorMode.CLICK
                 selected_layer = None
                 if self.viewer.layers.selection.active != self.points_layer:
                     selected_layer = self.viewer.layers.selection.active
-                self.bbox_layer = self.viewer.add_shapes(name=self.bbox_layer_name)
                 if selected_layer is not None:
                     self.viewer.layers.selection.active = selected_layer
                 if self.image_layer.ndim == 3:
@@ -653,7 +679,6 @@ class SamWidget(QWidget):
                     self.update_bbox_layer({}, bbox_tmp=None)
                     self.viewer.dims.set_point(0, 0)
                     self.viewer.dims.set_point(0, pos[0])
-                self.bbox_layer.editable = False
                 self.bbox_first_coords = None
                 self.prev_segmentation_mode = SegmentationMode.SEMANTIC
 
@@ -693,6 +718,7 @@ class SamWidget(QWidget):
                 self.update_points_layer(None)
 
                 self.viewer.mouse_drag_callbacks.append(self.callback_click)
+                self.viewer.mouse_move_callbacks.append(self.callback_move)
                 self.viewer.keymap['Delete'] = self.on_delete
                 self.label_layer.keymap['Control-Z'] = self.on_undo
                 self.label_layer.keymap['Control-Shift-Z'] = self.on_redo
@@ -728,6 +754,8 @@ class SamWidget(QWidget):
         self.btn_mode_switch.setText("Switch to BBox Mode")
         self.check_prev_mask.setEnabled(False)
         self.check_auto_inc_bbox.setEnabled(False)
+        self.check_live_view.setEnabled(False)
+        self.check_live_view.setChecked(False)
         self.prev_segmentation_mode = SegmentationMode.SEMANTIC
         self.annotator_mode = AnnotatorMode.CLICK
 
@@ -746,14 +774,12 @@ class SamWidget(QWidget):
             self.remove_all_widget_callbacks(self.label_layer)
         if self.points_layer is not None and self.points_layer in self.viewer.layers:
             self.viewer.layers.remove(self.points_layer)
-        if self.bbox_layer is not None and self.bbox_layer in self.viewer.layers:
-            self.viewer.layers.remove(self.bbox_layer)
+        self.live_overlay_model.visible = False
         self.image_name = None
         self.image_layer = None
         self.label_layer = None
         self.label_layer_changes = None
         self.points_layer = None
-        self.bbox_layer = None
         self.bbox_first_coords = None
         self.annotator_mode = AnnotatorMode.NONE
         self.points = defaultdict(list)
@@ -769,6 +795,29 @@ class SamWidget(QWidget):
         self.rb_semantic.setStyleSheet("")
         self.rb_instance.setStyleSheet("")
         self._reset_history()
+    
+    def _get_bbox_overlay_and_node(self):
+        """Get inbuilt napari selection-box overlay for self.labels_layer and the box node from
+        the associated vispy overlay (so we can edit its colour and width later).
+
+        :return: napari overlay model and vispy node
+        :rtype: _type_
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            # private attribute access for overlays which causes warning
+            overlay = self.label_layer._overlays['selection_box']
+            overlay.visible = True
+            # as far as I can tell this is the only way to get the vispy layer for a napari layer
+            vispy_layer = self.viewer.window._qt_viewer.canvas.layer_to_visual[self.label_layer]
+        # we loop over each vispy overlay in the vispy layers and return the one that is a SelectionBoxOverlay
+        for key, value in vispy_layer.overlays.items():
+            if type(key) == SelectionBoxOverlay:
+                vispy_overlay = value
+        # the node is the bbox drawn on the vispy layer
+        node = vispy_overlay.node
+        node.line.set_data(color="steelblue", width=self.bbox_edge_width)
+        return overlay, node
 
     def _switch_mode(self):
         if self.annotator_mode == AnnotatorMode.CLICK:
@@ -837,7 +886,33 @@ class SamWidget(QWidget):
                 data_coordinates = self.image_layer.world_to_data(event.position)
                 coords = np.round(data_coordinates).astype(int)
                 self.do_bbox_click(coords, BboxState.RELEASE)
-
+    
+    def callback_move(self, layer, event):
+        current_t = time()
+        # avoid over-requesting to SAM
+        if current_t - self.live_overlay_t < self.live_timeout_s:
+            return
+        if self.image_layer.ndim != 2:
+            return
+        y, x = int(event.position[0]), int(event.position[1])
+        if self.annotator_mode == AnnotatorMode.CLICK and self.check_live_view.isChecked():
+            # this is (lazily) copied from predict_click
+            points = copy.deepcopy(self.points)
+            points[1].append((y, x))
+            points_flattened = []
+            labels_flattended = []
+            for label, label_points in points.items():
+                points_flattened.extend(label_points)
+                label = int(label == 1)
+                labels = [label] * len(label_points)
+                labels_flattended.extend(labels)
+            prediction = self.predict_sam(points=copy.deepcopy(points_flattened), labels=copy.deepcopy(labels_flattended), bbox=None, x_coord=copy.deepcopy(x)) # TODO: doesn't work in ndim=3
+            label_n = self.label_layer.selected_label
+            color = self.label_layer.colormap.colors[label_n]
+            color[3] = 0.4
+            color = tuple([int(255* i) for i in color])
+            self.live_overlay_visual.draw_mask(prediction, color)
+    
     def on_delete(self, layer):
         selected_points = list(self.points_layer.selected_data)
         if len(selected_points) > 0:
@@ -980,6 +1055,21 @@ class SamWidget(QWidget):
                 raise RuntimeError("Only 2D and 3D images are supported.")
             bbox_tmp = np.rint(bbox_tmp).astype(np.int32)
             self.update_bbox_layer(self.bboxes, bbox_tmp=bbox_tmp)
+            
+            current_t = time()
+            if current_t - self.live_overlay_t < self.live_timeout_s or len(bbox_tmp) < 4:
+                return
+            if not self.check_live_view.isChecked():
+                return
+            label_n = self.label_layer.selected_label
+            color = self.label_layer.colormap.colors[label_n]
+            color[3] = 0.4
+            # overlay expects uint8 format - this assumes colors are rgba tuples and not strings
+            color = tuple([int(255* i) for i in color])
+            x_coord = self.bbox_first_coords[0]
+            prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_tmp), x_coord=x_coord)
+            self.live_overlay_visual.draw_mask(prediction, color)
+
         else:
             self._save_history({"mode": AnnotatorMode.BBOX, "points": copy.deepcopy(self.points), "bboxes": copy.deepcopy(self.bboxes), "logits": self.sam_logits, "point_label": self.point_label})
             if self.image_layer.ndim == 2:
@@ -998,7 +1088,6 @@ class SamWidget(QWidget):
 
             bbox_final = np.rint(bbox_final).astype(np.int32)
             self.bboxes[new_label].append(bbox_final)
-            self.update_bbox_layer(self.bboxes)
 
             prediction = self.predict_sam(points=None, labels=None, bbox=copy.deepcopy(bbox_final), x_coord=x_coord)
 
@@ -1159,7 +1248,7 @@ class SamWidget(QWidget):
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
-            self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, edge_color="white", size=self.point_size)
+            self.points_layer = self.viewer.add_points(name=self.points_layer_name, data=np.asarray(points_flattened), face_color=colors_flattended, size=self.point_size)
         self.points_layer.editable = False
 
         if selected_layer is not None:
@@ -1168,18 +1257,11 @@ class SamWidget(QWidget):
 
     def update_bbox_layer(self, bboxes, bbox_tmp=None):
         self.bbox_edge_width = int(self.le_bbox_edge_width.text())
-        bboxes_flattened = []
-        edge_colors = []
-        for _, bbox in bboxes.items():
-            bboxes_flattened.extend(bbox)
-            edge_colors.extend(['skyblue'] * len(bbox))
+        self.bbox_node.line.set_data(color="steelblue", width=self.bbox_edge_width)
         if bbox_tmp is not None:
-            bboxes_flattened.append(bbox_tmp)
-            edge_colors.append('steelblue')
-        self.bbox_layer.data = bboxes_flattened
-        self.bbox_layer.edge_width = [self.bbox_edge_width] * len(bboxes_flattened)
-        self.bbox_layer.edge_color = edge_colors
-        self.bbox_layer.face_color = [(0, 0, 0, 0)] * len(bboxes_flattened)
+            p0 = bbox_tmp[0]
+            p1 = bbox_tmp[2]
+            self.bbox_overlay.bounds = ((p0[0], p0[1]), (p1[0], p1[1]))
 
     def find_changed_point(self, old_points, new_points):
         if len(new_points) == 0:
@@ -1372,6 +1454,10 @@ class SamWidget(QWidget):
                 cached_weight_types[model_type] = False
 
         return cached_weight_types
+
+    def _toggle_live_view(self):
+        if not self.check_live_view.isChecked():
+            self.live_overlay_visual.remove_current()
 
     # def _myfilter(self, row, parent):
     #     return "<hidden>" not in self.viewer.layers[row].name
