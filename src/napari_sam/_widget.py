@@ -774,8 +774,6 @@ class SamWidget(QWidget):
             self.remove_all_widget_callbacks(self.label_layer)
         if self.points_layer is not None and self.points_layer in self.viewer.layers:
             self.viewer.layers.remove(self.points_layer)
-        if self.bbox_layer is not None and self.bbox_layer in self.viewer.layers:
-            self.viewer.layers.remove(self.bbox_layer)
         self.live_overlay_model.visible = False
         self.image_name = None
         self.image_layer = None
